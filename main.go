@@ -1,16 +1,23 @@
 package main
 
 import (
-	api "ClyMQ/kitex_gen/api/operations"
-	"log"
+	Server "ClyMQ/server"
+	"fmt"
+	"net"
+
+	"github.com/cloudwego/kitex/server"
 )
 
 func main() {
-	svr := api.NewServer(new(OperationsImpl))
 
-	err := svr.Run()
-
+	//start the broker server
+	addr,_ := net.ResolveTCPAddr("tcp", ":8888")
+	var opts []server.Option
+	opts = append(opts, server.WithServiceAddr(addr))
+	rpcServer := new(Server.RPCServer)
+	
+	err := rpcServer.Start(opts)
 	if err != nil {
-		log.Println(err.Error())
+		fmt.Println(err)
 	}
 }

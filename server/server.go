@@ -1,22 +1,36 @@
 package server
 
 import (
-	"ClyMQ/kitex_gen/api"
-	"context"
-	"fmt"
+	"ClyMQ/kitex_gen/api/client_operations"
+	client2 "github.com/cloudwego/kitex/client"
 )
 
-type server struct {
-	me int64
+type Server struct {
+	topics map[string]Topic
+	groups map[string]Group
 }
 
-func (s *server) Push(ctx context.Context, req *api.PushRequest) (resp *api.PushResponse, err error) {
-	fmt.Println(req)
-	return &api.PushResponse{
-		Ret: true,
-	}, nil
+func (s *Server)make(){
+
+	s.topics = make(map[string]Topic)
+	s.groups = make(map[string]Group)
+
+	s.groups["default"] = Group{}
+
 }
 
-func (s *server) Pull(ctx context.Context, req api.PullRequest) (resp *api.PullResponse, err error) {
-	return &api.PullResponse{Message: "111"}, nil
+func (s *Server)InfoHandle(ipport string) error {
+
+	client, err := client_operations.NewClient("client", client2.WithHostPorts(ipport))
+	if err == nil {
+		s.groups["default"].consumers[ipport] = &client
+
+		return nil
+	}
+
+	return err
 }
+
+func (s *Server)PushHandle()
+
+func (s *Server)PullHandle()

@@ -3,23 +3,18 @@ package main
 import (
 	"ClyMQ/kitex_gen/api"
 	"context"
-	"fmt"
 )
 
-// OperationsImpl implements the last service interface defined in the IDL.
-type OperationsImpl struct{}
+type Client_OperationsImpl struct{}
 
-// Push implements the OperationsImpl interface.
-func (s *OperationsImpl) Push(ctx context.Context, req *api.PushRequest) (resp *api.PushResponse, err error) {
+// Pub implements the Client_OperationsImpl interface.
+func (s *Client_OperationsImpl) Pub(ctx context.Context, req *api.PubRequest) (resp *api.PubResponse, err error) {
 	// TODO: Your code here...
-	fmt.Println(req)
-	return &api.PushResponse{
-		Ret: true,
-	}, nil
+	return &api.PubResponse{Ret: true}, nil
 }
 
-// Pull implements the OperationsImpl interface.
-func (s *OperationsImpl) Pull(ctx context.Context, req *api.PullRequest) (resp *api.PullResponse, err error) {
+// Pingpong implements the Client_OperationsImpl interface.
+func (s *Client_OperationsImpl) Pingpong(ctx context.Context, req *api.PingPongRequest) (resp *api.PingPongResponse, err error) {
 	// TODO: Your code here...
-	return &api.PullResponse{Message: "18788888888"}, nil
+	return &api.PingPongResponse{Pong: true}, err
 }
