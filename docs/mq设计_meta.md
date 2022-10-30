@@ -14,7 +14,13 @@ topic表示一个主题的消息队列，按道理这里需要维持一个队列
 
 * 每条消息只消费一次，支持单消费者和多消费者，即单消费者顺序消费消息，多消费者同时消费该partition消息，但每条消息只消费一次，可以通过增加消费者来提高消费能力。
 
+### SubScription
 
+消费模式支持两种：点对点（point to point）和订阅发布(sub and pub)；每个Topic都会可能会有这两种模式，所以每个Topic将拥有两个SubScription，我们会将这个范围扩大，让每个Partition拥有两个SubScription，分别支持这两种方式。当有消费者要订阅的情况分别如下：
+
+point to point：SubScription中只能有一个消费者组，Topic中的一条消息只能被一个消费者消费。我们会将这个范围扩大，每个topic中的一个partition只能被一个消费者消费。当有消费者选择这个模式时，将判断是否有一个group，若无则创建一个，若有则加入；
+
+sub and pub : SubScription中可以有多个消费者组，每个消费者组中只有一个消费者。
 
 ### 消费者组：
 * consumer group下可以有一个或多个consumer instance，consumer instance可以是一个进程，也可以是一个线程
