@@ -22,6 +22,7 @@ func NewServiceInfo() *kitex.ServiceInfo {
 		"push": kitex.NewMethodInfo(pushHandler, newServer_OperationsPushArgs, newServer_OperationsPushResult, false),
 		"pull": kitex.NewMethodInfo(pullHandler, newServer_OperationsPullArgs, newServer_OperationsPullResult, false),
 		"info": kitex.NewMethodInfo(infoHandler, newServer_OperationsInfoArgs, newServer_OperationsInfoResult, false),
+		"Sub":  kitex.NewMethodInfo(subHandler, newServer_OperationsSubArgs, newServer_OperationsSubResult, false),
 	}
 	extra := map[string]interface{}{
 		"PackageName": "api",
@@ -91,6 +92,24 @@ func newServer_OperationsInfoResult() interface{} {
 	return api.NewServer_OperationsInfoResult()
 }
 
+func subHandler(ctx context.Context, handler interface{}, arg, result interface{}) error {
+	realArg := arg.(*api.Server_OperationsSubArgs)
+	realResult := result.(*api.Server_OperationsSubResult)
+	success, err := handler.(api.Server_Operations).Sub(ctx, realArg.Req)
+	if err != nil {
+		return err
+	}
+	realResult.Success = success
+	return nil
+}
+func newServer_OperationsSubArgs() interface{} {
+	return api.NewServer_OperationsSubArgs()
+}
+
+func newServer_OperationsSubResult() interface{} {
+	return api.NewServer_OperationsSubResult()
+}
+
 type kClient struct {
 	c client.Client
 }
@@ -126,6 +145,16 @@ func (p *kClient) Info(ctx context.Context, req *api.InfoRequest) (r *api.InfoRe
 	_args.Req = req
 	var _result api.Server_OperationsInfoResult
 	if err = p.c.Call(ctx, "info", &_args, &_result); err != nil {
+		return
+	}
+	return _result.GetSuccess(), nil
+}
+
+func (p *kClient) Sub(ctx context.Context, req *api.SubRequest) (r *api.SubResponse, err error) {
+	var _args api.Server_OperationsSubArgs
+	_args.Req = req
+	var _result api.Server_OperationsSubResult
+	if err = p.c.Call(ctx, "Sub", &_args, &_result); err != nil {
 		return
 	}
 	return _result.GetSuccess(), nil
