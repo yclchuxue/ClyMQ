@@ -4,6 +4,7 @@ import (
 	"ClyMQ/kitex_gen/api"
 	"ClyMQ/kitex_gen/api/client_operations"
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
@@ -17,7 +18,7 @@ type Client struct{
 	mu sync.RWMutex
 	name string
 	consumer client_operations.Client
-	subList []*SubScription
+	subList map[string]*SubScription  // 若这个consumer关闭则遍历这些订阅并修改
 	// ingroups []*Group
 	state string
 }
@@ -34,7 +35,7 @@ func NewClient(ipport string, con client_operations.Client) *Client{
 		name: ipport,
 		consumer: con,
 		state: ALIVE,
-		subList: make([]*SubScription, 0),
+		subList: make(map[string]*SubScription),
 	}
 	return client
 }
@@ -48,13 +49,34 @@ func NewGroup(topic_name, cli_name string)*Group{
 	return group
 }
 
-func (g *Group)AddClient(cli_name string){
+func (g *Group)RecoverClient(cli_name string) error {
 	g.rmu.Lock()
+	defer g.rmu.Unlock()
+
 	_, ok := g.consumers[cli_name]
 	if ok {
+		if g.consumers[cli_name] {
+			return errors.New("This client is alive before")
+		}else{
+			g.consumers[cli_name] = true
+			return nil
+		}
+		return nil
+	}else{
+		return errors.New("Do not have this client")
+	}	
+}
+
+func (g *Group)AddClient(cli_name string) error {
+	g.rmu.Lock()
+	defer g.rmu.Unlock()
+	_, ok := g.consumers[cli_name]
+	if ok {
+		return errors.New("this client has in this group")
+	}else{
 		g.consumers[cli_name] = true
+		return nil
 	}
-	g.rmu.Unlock()
 }
 
 func (g *Group)DownClient(cli_name string){
@@ -94,7 +116,13 @@ func (c *Client)CheckConsumer() bool { //心跳检测
 
 func (c *Client)AddSubScription(sub *SubScription){
 	c.mu.Lock()
-	c.subList = append(c.subList, sub)
+	c.subList[sub.name] = sub
+	c.mu.Unlock()
+}
+
+func (c *Client)ReduceSubScription(name string){
+	c.mu.Lock()
+	delete(c.subList, name)
 	c.mu.Unlock()
 }
 

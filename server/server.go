@@ -2,6 +2,7 @@ package server
 
 import (
 	"ClyMQ/kitex_gen/api/client_operations"
+	"errors"
 	"sync"
 
 	client2 "github.com/cloudwego/kitex/client"
@@ -74,6 +75,7 @@ func (s *Server) InfoHandle(ipport string) error {
 			s.consumers[ipport] = consumer
 		}
 		go s.CheckConsumer(consumer)
+		go s.RecoverConsumer(consumer)
 		s.mu.Unlock()
 
 		return nil
@@ -82,12 +84,24 @@ func (s *Server) InfoHandle(ipport string) error {
 	return err
 }
 
+func (s *Server)RecoverConsumer(client *Client){
+	s.mu.Lock()
+	client.mu.Lock()
+	client.state = ALIVE
+	for sub_name, sub := range client.subList{
+		go s.topics[sub.topic_name].RecoverRelease(sub_name, client.name)
+	}
+	client.mu.Unlock()	
+	s.mu.Unlock()
+}
+
 func (s *Server)CheckConsumer(client *Client){
 	shutdown := client.CheckConsumer()
 	if shutdown { //该consumer已关闭，平衡subscription
 		client.mu.Lock()
 		for _, subscription := range client.subList{
-			subscription.ShutdownConsumer(client.name)
+			topic := subscription.ShutdownConsumer(client.name)
+			s.topics[topic].Rebalance()
 		}
 		client.mu.Unlock()
 	}
@@ -97,11 +111,30 @@ func (s *Server)CheckConsumer(client *Client){
 // subscribe 订阅
 func (s *Server) SubHandle(req sub) error{
 	s.mu.Lock()
-
-	sub, err := s.topics[req.topic].AddSubScription(req)
-
+	top, ok := s.topics[req.topic]
+	if !ok {
+		return errors.New("this topic not in this broker")
+	}
+	sub, err := top.AddSubScription(req, s.consumers[req.consumer])
 	if err != nil{
 		s.consumers[req.consumer].AddSubScription(sub)
+	}
+
+	s.mu.Unlock()
+
+	return nil
+}
+
+func (s *Server)UnSubHandle(req sub) error {
+
+	s.mu.Lock()
+	top, ok := s.topics[req.topic]
+	if !ok {
+		return errors.New("this topic not in this broker")
+	}
+	sub_name, err := top.ReduceSubScription(req)
+	if err != nil {
+		s.consumers[req.consumer].ReduceSubScription(sub_name)
 	}
 
 	s.mu.Unlock()
