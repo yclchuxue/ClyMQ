@@ -22,6 +22,10 @@ point to point：SubScription中只能有一个消费者组，Topic中的一条�
 
 sub and pub : SubScription中可以有多个消费者组，每个消费者组中只有一个消费者。
 
+### Client
+
+当Consumer连接到MQ后，consumer会发送一个info，让MQ通过RPC连接到该客户端，维护一个Client，该Client中保留可以发送sub等请求的consumer，和该客户端所参见的订阅集合，这里采用map的方式：map[string]*SubScription；和一个表示该客户端状态的变量state；
+
 ### 消费者组：
 * consumer group下可以有一个或多个consumer instance，consumer instance可以是一个进程，也可以是一个线程
 
