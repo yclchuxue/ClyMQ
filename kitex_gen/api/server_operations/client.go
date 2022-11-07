@@ -15,6 +15,7 @@ type Client interface {
 	Pull(ctx context.Context, req *api.PullRequest, callOptions ...callopt.Option) (r *api.PullResponse, err error)
 	Info(ctx context.Context, req *api.InfoRequest, callOptions ...callopt.Option) (r *api.InfoResponse, err error)
 	Sub(ctx context.Context, req *api.SubRequest, callOptions ...callopt.Option) (r *api.SubResponse, err error)
+	StarttoGet(ctx context.Context, req *api.InfoGetRequest, callOptions ...callopt.Option) (r *api.InfoGetResponse, err error)
 }
 
 // NewClient creates a client for the service defined in IDL.
@@ -64,4 +65,9 @@ func (p *kServer_OperationsClient) Info(ctx context.Context, req *api.InfoReques
 func (p *kServer_OperationsClient) Sub(ctx context.Context, req *api.SubRequest, callOptions ...callopt.Option) (r *api.SubResponse, err error) {
 	ctx = client.NewCtxWithCallOptions(ctx, callOptions)
 	return p.kClient.Sub(ctx, req)
+}
+
+func (p *kServer_OperationsClient) StarttoGet(ctx context.Context, req *api.InfoGetRequest, callOptions ...callopt.Option) (r *api.InfoGetResponse, err error) {
+	ctx = client.NewCtxWithCallOptions(ctx, callOptions)
+	return p.kClient.StarttoGet(ctx, req)
 }

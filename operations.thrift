@@ -1,7 +1,7 @@
 namespace go api
 
 struct PushRequest {
-    1: i64 producer
+    1: string producer
     2: string topic
     3: string key
     4: string message
@@ -12,7 +12,7 @@ struct PushResponse {
 }
 
 struct PullRequest {
-    1: i64 consumer
+    1: string consumer
     2: string topic
     3: string key
 }
@@ -27,6 +27,17 @@ struct InfoRequest {
 
 struct InfoResponse {
     1: bool ret
+}
+
+struct InfoGetRequest {
+    1: string   cli_name
+    2: string   topic_name
+    3: string   part_name
+    4: i64      offset
+}
+
+struct InfoGetResponse {
+    1: bool  ret
 }
 
 struct SubRequest {
@@ -45,10 +56,14 @@ service Server_Operations {
     PullResponse pull(1: PullRequest req)
     InfoResponse info(1: InfoRequest req)
     SubResponse  Sub(1:  SubRequest  req)
+    InfoGetResponse StarttoGet(1: InfoGetRequest req)
 }
 
 struct PubRequest{
-    1: string meg
+    1: string topic_name
+    2: string part_name
+    3: i64    offset
+    4: string meg
 }
 
 struct PubResponse{

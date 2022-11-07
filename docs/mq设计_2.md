@@ -3,7 +3,7 @@
 Zookeeper中将保存着每个Broker的信息，和Topic-Partition的信息，如图：
 
 
-## Producter
+## Producer
 
 生产者通过Topic和Partition的name查询Zookeeper获得需要将信息发送到那个broker，通过Push操作将信息发送到broker，信息的内容包括Topic和Partition的name;
 

@@ -19,10 +19,11 @@ func NewServiceInfo() *kitex.ServiceInfo {
 	serviceName := "Server_Operations"
 	handlerType := (*api.Server_Operations)(nil)
 	methods := map[string]kitex.MethodInfo{
-		"push": kitex.NewMethodInfo(pushHandler, newServer_OperationsPushArgs, newServer_OperationsPushResult, false),
-		"pull": kitex.NewMethodInfo(pullHandler, newServer_OperationsPullArgs, newServer_OperationsPullResult, false),
-		"info": kitex.NewMethodInfo(infoHandler, newServer_OperationsInfoArgs, newServer_OperationsInfoResult, false),
-		"Sub":  kitex.NewMethodInfo(subHandler, newServer_OperationsSubArgs, newServer_OperationsSubResult, false),
+		"push":       kitex.NewMethodInfo(pushHandler, newServer_OperationsPushArgs, newServer_OperationsPushResult, false),
+		"pull":       kitex.NewMethodInfo(pullHandler, newServer_OperationsPullArgs, newServer_OperationsPullResult, false),
+		"info":       kitex.NewMethodInfo(infoHandler, newServer_OperationsInfoArgs, newServer_OperationsInfoResult, false),
+		"Sub":        kitex.NewMethodInfo(subHandler, newServer_OperationsSubArgs, newServer_OperationsSubResult, false),
+		"StarttoGet": kitex.NewMethodInfo(starttoGetHandler, newServer_OperationsStarttoGetArgs, newServer_OperationsStarttoGetResult, false),
 	}
 	extra := map[string]interface{}{
 		"PackageName": "api",
@@ -110,6 +111,24 @@ func newServer_OperationsSubResult() interface{} {
 	return api.NewServer_OperationsSubResult()
 }
 
+func starttoGetHandler(ctx context.Context, handler interface{}, arg, result interface{}) error {
+	realArg := arg.(*api.Server_OperationsStarttoGetArgs)
+	realResult := result.(*api.Server_OperationsStarttoGetResult)
+	success, err := handler.(api.Server_Operations).StarttoGet(ctx, realArg.Req)
+	if err != nil {
+		return err
+	}
+	realResult.Success = success
+	return nil
+}
+func newServer_OperationsStarttoGetArgs() interface{} {
+	return api.NewServer_OperationsStarttoGetArgs()
+}
+
+func newServer_OperationsStarttoGetResult() interface{} {
+	return api.NewServer_OperationsStarttoGetResult()
+}
+
 type kClient struct {
 	c client.Client
 }
@@ -155,6 +174,16 @@ func (p *kClient) Sub(ctx context.Context, req *api.SubRequest) (r *api.SubRespo
 	_args.Req = req
 	var _result api.Server_OperationsSubResult
 	if err = p.c.Call(ctx, "Sub", &_args, &_result); err != nil {
+		return
+	}
+	return _result.GetSuccess(), nil
+}
+
+func (p *kClient) StarttoGet(ctx context.Context, req *api.InfoGetRequest) (r *api.InfoGetResponse, err error) {
+	var _args api.Server_OperationsStarttoGetArgs
+	_args.Req = req
+	var _result api.Server_OperationsStarttoGetResult
+	if err = p.c.Call(ctx, "StarttoGet", &_args, &_result); err != nil {
 		return
 	}
 	return _result.GetSuccess(), nil
