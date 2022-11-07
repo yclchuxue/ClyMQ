@@ -20,14 +20,14 @@ type Server struct {
 }
 
 type push struct {
-	producer int64
+	producer string
 	topic    string
 	key      string
 	message  string
 }
 
 type pull struct {
-	consumer int64
+	consumer string
 	topic    string
 	key      string
 }
@@ -41,6 +41,13 @@ type sub struct{
 	topic string
 	key   string
 	option int8
+}
+
+type startget struct{
+	cli_name  	string
+    topic_name	string
+    part_name	string
+    offset		int64
 }
 
 func (s *Server) make() {
@@ -82,6 +89,10 @@ func (s *Server) InfoHandle(ipport string) error {
 	}
 
 	return err
+}
+
+func (s *Server)StartGet(start startget) error {
+	
 }
 
 func (s *Server)RecoverConsumer(client *Client){

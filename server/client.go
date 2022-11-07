@@ -17,10 +17,19 @@ const (
 type Client struct{
 	mu sync.RWMutex
 	name string
-	consumer client_operations.Client
-	subList map[string]*SubScription  // 若这个consumer关闭则遍历这些订阅并修改
-	// ingroups []*Group
 	state string
+	consumer client_operations.Client
+	parts map[string]Part
+
+	// ingroups []*Group
+	subList map[string]*SubScription  // 若这个consumer关闭则遍历这些订阅并修改
+}
+
+type Part struct{
+	topic_name 	string
+	part_name 	string
+	offset int64
+	buffer 		[]string
 }
 
 type Group struct{

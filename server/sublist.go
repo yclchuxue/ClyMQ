@@ -36,9 +36,10 @@ type SubScription struct {
 	name 			 string
 	topic_name       string
 	option           int8
-	consumer_to_part map[string]string //consumer to partition
 	groups           []*Group
+	
 	consistent       *Consistent
+	consumer_to_part map[string]string //consumer to partition
 }
 
 type Consistent struct {
