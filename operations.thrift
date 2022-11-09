@@ -34,6 +34,7 @@ struct InfoGetRequest {
     2: string   topic_name
     3: string   part_name
     4: i64      offset
+    5: i8   option
 }
 
 struct InfoGetResponse {
@@ -63,7 +64,7 @@ struct PubRequest{
     1: string topic_name
     2: string part_name
     3: i64    offset
-    4: string meg
+    4: binary meg
 }
 
 struct PubResponse{
