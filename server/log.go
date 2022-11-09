@@ -1,86 +1,70 @@
 package server
 
 import (
-	"sync/atomic"
+	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"sync"
+	"time"
 )
 
-
-type Logger interface {
-	Noticef(format string, v ...interface{})
-
-	Warnf(format string, v ...interface{})
-
-	Fatalf(format string, v ...interface{})
-
-	Errorf(format string, v ...interface{})
-
-	Debugf(format string, v ...interface{})
-
-	Tracef(format string, v ...interface{})
-}
-
-func (s *RPCServer) Logger() Logger{
-	s.logging.Lock()
-	defer s.logging.Unlock()
-	return s.logging.logger
-}
-
-// Noticef logs a notice statement
-func (s *RPCServer) Noticef(format string, v ...interface{}) {
-	s.executeLogCall(func(logger Logger, format string, v ...interface{}) {
-		logger.Noticef(format, v...)
-	}, format, v...)
-}
-
-
-// Errorf logs an error
-func (s *RPCServer) Errorf(format string, v ...interface{}) {
-	s.executeLogCall(func(logger Logger, format string, v ...interface{}) {
-		logger.Errorf(format, v...)
-	}, format, v...)
-}
-
-// Warnf logs a warning error
-func (s *RPCServer) Warnf(format string, v ...interface{}) {
-	s.executeLogCall(func(logger Logger, format string, v ...interface{}) {
-		logger.Warnf(format, v...)
-	}, format, v...)
-}
-
-// Fatalf logs a fatal error
-func (s *RPCServer) Fatalf(format string, v ...interface{}) {
-	s.executeLogCall(func(logger Logger, format string, v ...interface{}) {
-		logger.Fatalf(format, v...)
-	}, format, v...)
-}
-
-// Debugf logs a debug statement
-func (s *RPCServer) Debugf(format string, v ...interface{}) {
-	if atomic.LoadInt32(&s.logging.debug) == 0 {
-		return
+// Retrieve the verbosity level from an environment variable
+func getVerbosity() int {
+	v := os.Getenv("VERBOSE")
+	level := 0
+	if v != "" {
+		var err error
+		level, err = strconv.Atoi(v)
+		if err != nil {
+			log.Fatalf("Invalid verbosity %v", v)
+		}
 	}
-
-	s.executeLogCall(func(logger Logger, format string, v ...interface{}) {
-		logger.Debugf(format, v...)
-	}, format, v...)
+	return level
 }
 
-// Tracef logs a trace statement
-func (s *RPCServer) Tracef(format string, v ...interface{}) {
-	if atomic.LoadInt32(&s.logging.trace) == 0 {
-		return
-	}
+type logTopic string
 
-	s.executeLogCall(func(logger Logger, format string, v ...interface{}) {
-		logger.Tracef(format, v...)
-	}, format, v...)
+const (
+	dClient  logTopic = "CLNT"
+	dCommit  logTopic = "CMIT"
+	dDrop    logTopic = "DROP"
+	dError   logTopic = "ERRO"
+	dInfo    logTopic = "INFO"
+	dLeader  logTopic = "LEAD"
+	dLog     logTopic = "LOG1"
+	dLog2    logTopic = "LOG2"
+	dPersist logTopic = "PERS"
+	dSnap    logTopic = "SNAP"
+	dTerm    logTopic = "TERM"
+	dTest    logTopic = "TEST"
+	dTimer   logTopic = "TIMR"
+	dTrace   logTopic = "TRCE"
+	dVote    logTopic = "VOTE"
+	dWarn    logTopic = "WARN"
+)
+
+var debugStart time.Time
+var debugVerbosity int
+var mu sync.Mutex
+
+func LOGinit() {
+	mu.Lock()
+	debugVerbosity = getVerbosity()
+	debugStart = time.Now()
+
+	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
+	mu.Unlock()
 }
 
-func (s *RPCServer) executeLogCall(f func(logger Logger, format string, v ...interface{}), format string, args ...interface{}){
-	s.logging.RLock()
-	defer s.logging.RUnlock()
-	if s.logging.logger == nil {
-		return
+func DEBUG(topic logTopic, format string, a ...interface{}) {
+	if 3 >= 1 {
+		mu.Lock()
+		time := time.Since(debugStart).Microseconds()
+		time = time / 100
+		prefix := fmt.Sprintf("%06d %v ", time, string(topic))
+		format = prefix + format
+		fmt.Printf(format, a...)
+		mu.Unlock()
 	}
-	f(s.logging.logger, format, args...)
 }
