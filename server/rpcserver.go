@@ -6,21 +6,19 @@ import (
 	"ClyMQ/kitex_gen/api/server_operations"
 	"context"
 	"fmt"
-	"sync"
+
 	"github.com/cloudwego/kitex/server"
 )
 
 type RPCServer struct {
 	// me int64
 
-	logging struct {
-		sync.RWMutex
-		logger      Logger
-		trace       int32
-		debug       int32
-		traceSysAcc int32
-	}
 	server Server
+}
+
+func NewRpcServer() RPCServer {
+	LOGinit()
+	return RPCServer{}
 }
 
 func (s *RPCServer) Start(opts []server.Option) error {

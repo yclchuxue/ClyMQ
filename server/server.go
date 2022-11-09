@@ -3,9 +3,14 @@ package server
 import (
 	"ClyMQ/kitex_gen/api/client_operations"
 	"errors"
+	"os"
 	"sync"
 
 	client2 "github.com/cloudwego/kitex/client"
+)
+
+var (
+	name string
 )
 
 type Server struct {
@@ -16,7 +21,27 @@ type Server struct {
 
 	// sublist map[string]*SubScription
 
-	mu sync.Mutex
+	mu sync.RWMutex
+}
+
+type Key struct {
+	Start_index int64	`json:"start_index"`
+	End_index 	int64	`json:"end_index"`
+	Size  		int 	`json:"size"`
+}
+
+type Message struct {
+	Index 		int64 		`json:"index"`
+	Topic_name 	string		`json:"topic_name"`
+	Part_name 	string		`json:"part_name"`
+	Msg 		[]byte		`json:"msg"`
+}
+
+type Msg struct {
+	producer string
+	topic    string
+	key      string
+	msg 	 []byte
 }
 
 type push struct {
@@ -48,6 +73,7 @@ type startget struct{
     topic_name	string
     part_name	string
     offset		int64
+	option 		int8
 }
 
 func (s *Server) make() {
@@ -58,17 +84,18 @@ func (s *Server) make() {
 	s.consumers = make(map[string]*Client)
 	// s.groups["default"] = Group{}
 
-	s.mu = sync.Mutex{}
+	s.mu = sync.RWMutex{}
 
-	s.StartRelease()
+	name = GetIpport()
 }
 
-func (s* Server)StartRelease(){
-	s.mu.Lock()
-	for _, topic := range s.topics {
-		go topic.StartRelease(s)
+func (s *Server)CheckList(){
+	str, _ := os.Getwd()
+	str += name
+	ret := CheckFileOrList(str)
+	if !ret {
+		CreateList(str)
 	}
-	s.mu.Unlock()
 }
 
 func (s *Server) InfoHandle(ipport string) error {
@@ -82,42 +109,67 @@ func (s *Server) InfoHandle(ipport string) error {
 			s.consumers[ipport] = consumer
 		}
 		go s.CheckConsumer(consumer)
-		go s.RecoverConsumer(consumer)
 		s.mu.Unlock()
 
 		return nil
+	}
+	
+	DEBUG(dError, "Connect client %v failed\n", ipport)
+
+	return err
+}
+
+func (s *Server)StartGet(start startget) (err error) {
+	/*
+	新开启一个consumer关于一个topic和partition的协程来消费该partition的信息；
+
+	查询是否有该订阅的信息；
+
+	PTP：需要负载均衡
+
+	PSB：不需要负载均衡
+	*/
+	err = nil
+	switch start.option{
+	case TOPIC_NIL_PTP:
+		
+
+	case TOPIC_KEY_PSB:
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		sub_name := GetStringfromSub(start.topic_name, start.part_name, start.option)
+		ret := s.consumers[start.cli_name].CheckSubscription(sub_name)
+		
+		if ret {  //该订阅存在
+			clis := make([]*client_operations.Client, 0)
+			clis = append(clis, s.consumers[start.cli_name].GetCli())
+			file := s.topics[start.topic_name].GetFile(start.part_name)
+			go s.consumers[start.cli_name].StartPart(start, clis, file)
+		}else{    //该订阅不存在
+			err = errors.New("This subscription is not exist")
+		}
+	default:
+		err = errors.New("The option is not PTP or PSB")
 	}
 
 	return err
 }
 
-func (s *Server)StartGet(start startget) error {
-	
-}
-
-func (s *Server)RecoverConsumer(client *Client){
-	s.mu.Lock()
-	client.mu.Lock()
-	client.state = ALIVE
-	for sub_name, sub := range client.subList{
-		go s.topics[sub.topic_name].RecoverRelease(sub_name, client.name)
-	}
-	client.mu.Unlock()	
-	s.mu.Unlock()
-}
 
 func (s *Server)CheckConsumer(client *Client){
 	shutdown := client.CheckConsumer()
 	if shutdown { //该consumer已关闭，平衡subscription
 		client.mu.Lock()
 		for _, subscription := range client.subList{
-			topic := subscription.ShutdownConsumer(client.name)
-			s.topics[topic].Rebalance()
+			subscription.ShutdownConsumer(client.name)
+			/*
+			将consumer中的Part关闭
+			*/
 		}
 		client.mu.Unlock()
 	}
 }
-
 
 // subscribe 订阅
 func (s *Server) SubHandle(req sub) error{
@@ -152,22 +204,7 @@ func (s *Server)UnSubHandle(req sub) error {
 	return nil
 }
 
-func (s *Server) addMessage(topic *Topic, req push) error {
-	part, ok := topic.Parts[req.key]
-	if !ok {
-		part = NewPartition(req)
 
-		go part.Release(s)  //创建新分片后，开启协程发送消息
-
-		topic.Parts[req.key] = part
-	}else{
-		part.rmu.Lock()
-		part.queue = append(part.queue, req.message)
-		part.rmu.Unlock()
-	}
-
-	return nil
-}
 
 func (s *Server) PushHandle(req push) error {
 
@@ -178,7 +215,7 @@ func (s *Server) PushHandle(req push) error {
 		s.topics[req.topic] = topic
 		s.mu.Unlock()
 	}else{
-		s.addMessage(topic, req)
+		topic.addMessage(req)
 	}
 	return nil
 }
