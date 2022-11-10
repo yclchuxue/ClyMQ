@@ -13,6 +13,10 @@ var (
 	name string
 )
 
+const (
+	NODE_SIZE  =  42
+)
+
 type Server struct {
 	topics map[string]*Topic
 	// groups map[string]Group
@@ -72,7 +76,7 @@ type startget struct{
 	cli_name  	string
     topic_name	string
     part_name	string
-    offset		int64
+    index		int64
 	option 		int8
 }
 
@@ -132,7 +136,7 @@ func (s *Server)StartGet(start startget) (err error) {
 	err = nil
 	switch start.option{
 	case TOPIC_NIL_PTP:
-		
+
 
 	case TOPIC_KEY_PSB:
 		s.mu.RLock()
@@ -142,8 +146,8 @@ func (s *Server)StartGet(start startget) (err error) {
 		ret := s.consumers[start.cli_name].CheckSubscription(sub_name)
 		
 		if ret {  //该订阅存在
-			clis := make([]*client_operations.Client, 0)
-			clis = append(clis, s.consumers[start.cli_name].GetCli())
+			clis := make(map[string]*client_operations.Client)
+			clis[start.cli_name] = s.consumers[start.cli_name].GetCli()
 			file := s.topics[start.topic_name].GetFile(start.part_name)
 			go s.consumers[start.cli_name].StartPart(start, clis, file)
 		}else{    //该订阅不存在
@@ -178,7 +182,7 @@ func (s *Server) SubHandle(req sub) error{
 	if !ok {
 		return errors.New("this topic not in this broker")
 	}
-	sub, err := top.AddSubScription(req, s.consumers[req.consumer])
+	sub, err := top.AddSubScription(req)
 	if err != nil{
 		s.consumers[req.consumer].AddSubScription(sub)
 	}

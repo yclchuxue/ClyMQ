@@ -1,6 +1,7 @@
 package server
 
 import (
+	"ClyMQ/kitex_gen/api/client_operations"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -70,19 +71,19 @@ func (t *Topic) addMessage(req push) error {
 // topic + "nil" + "ptp" (point to point consumer比partition为 1 : n)
 // topic + key   + "psb" (pub and sub consumer比partition为 n : 1)
 // topic + "nil" + "psb" (pub and sub consumer比partition为 n : n)
-func GetStringfromSub(top_name, paet_name string, option int8) string {
+func GetStringfromSub(top_name, part_name string, option int8) string {
 	ret := top_name
 	if option == TOPIC_NIL_PTP { // 订阅发布模式
 		ret = ret + "NIL" + "ptp" //point to point
 	} else if option == TOPIC_KEY_PSB {
-		ret = ret + paet_name + "psb" //pub and sub
+		ret = ret + part_name + "psb" //pub and sub
 	} else if option == TOPIC_NIL_PSB {
 		ret = ret + "NIL" + "psb"
 	}
 	return ret
 }
 
-func (t *Topic) AddSubScription(req sub, cli *Client) (retsub *SubScription, err error) {
+func (t *Topic) AddSubScription(req sub) (retsub *SubScription, err error) {
 	ret := GetStringfromSub(req.topic, req.key, req.option)
 	t.rmu.RLock()
 	subscription, ok := t.subList[ret]
@@ -203,8 +204,9 @@ type SubScription struct {
 	option     int8
 	groups     []*Group
 
-	consistent       *Consistent
 	consumer_to_part map[string]string //consumer to partition
+
+	config Config
 }
 
 func NewSubScription(req sub, name string) *SubScription {
@@ -220,12 +222,14 @@ func NewSubScription(req sub, name string) *SubScription {
 	sub.groups = append(sub.groups, group)
 	sub.consumer_to_part[req.consumer] = req.key
 
-	if req.option == TOPIC_NIL_PTP {
-		sub.consistent = NewConsistent()
-		sub.consistent.Add(req.consumer)
-	}
-
 	return sub
+}
+
+func (s *SubScription)GetConfig() *Config {
+	s.rmu.RLock()
+	defer s.rmu.RUnlock()
+
+	return &(s.config)
 }
 
 func (s *SubScription) ShutdownConsumer(cli_name string) string {
@@ -235,7 +239,6 @@ func (s *SubScription) ShutdownConsumer(cli_name string) string {
 	switch s.option {
 	case TOPIC_NIL_PTP: // point to point just one group
 		s.groups[0].DownClient(cli_name)
-		s.consistent.Reduce(cli_name)
 	case TOPIC_KEY_PSB:
 		for _, group := range s.groups {
 			group.DownClient(cli_name)
@@ -253,7 +256,6 @@ func (s *SubScription) ReduceConsumer(cli_name string) {
 	switch s.option {
 	case TOPIC_NIL_PTP:
 		s.groups[0].DeleteClient(cli_name)
-		s.consistent.Reduce(cli_name)
 	case TOPIC_KEY_PSB:
 		for _, group := range s.groups {
 			group.DeleteClient(cli_name)
@@ -270,7 +272,6 @@ func (s *SubScription) RecoverConsumer(req sub) {
 	switch req.option {
 	case TOPIC_NIL_PTP:
 		s.groups[0].RecoverClient(req.consumer)
-		s.consistent.Add(req.consumer)
 	case TOPIC_KEY_PSB:
 		group := NewGroup(req.topic, req.consumer)
 		s.groups = append(s.groups, group)
@@ -286,11 +287,47 @@ func (s *SubScription) AddConsumer(req sub) {
 	switch req.option {
 	case TOPIC_NIL_PTP:
 		s.groups[0].AddClient(req.consumer)
-		s.consistent.Add(req.consumer)
 	case TOPIC_KEY_PSB:
 		group := NewGroup(req.topic, req.consumer)
 		s.groups = append(s.groups, group)
 		s.consumer_to_part[req.consumer] = req.key
+	}
+}
+
+type Config struct {
+	mu sync.RWMutex
+	PartToCon  	map[string][]string
+	Clis  		map[string]*client_operations.Client
+
+	consistent       *Consistent
+}
+
+func NewConfig() Config {
+	return Config{
+		mu: sync.RWMutex{},
+		PartToCon: make(map[string][]string),
+		Clis: make(map[string]*client_operations.Client),
+	}
+}
+
+func (c *Config) AddCli(part_name string, cli_name string, cli *client_operations.Client) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.PartToCon[part_name] = append(c.PartToCon[part_name], cli_name)
+	c.Clis[cli_name] = cli
+}
+
+func (c *Config) DeleteCli(part_name string, cli_name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.Clis, cli_name)
+	for i, name := range c.PartToCon[part_name]{
+		if name == cli_name {
+			c.PartToCon[part_name] = append(c.PartToCon[part_name][:i], c.PartToCon[part_name][i+1:]...)
+			break
+		}
 	}
 }
 

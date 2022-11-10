@@ -100,7 +100,7 @@ func (s *RPCServer) StarttoGet(ctx context.Context, req *api.InfoGetRequest) (re
 		cli_name: req.CliName,
 		topic_name: req.TopicName,
 		part_name: req.PartName,
-		offset: req.Offset,
+		index: req.Offset,
 	})
 
 	if err == nil{
