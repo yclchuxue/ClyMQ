@@ -63,8 +63,9 @@ service Server_Operations {
 struct PubRequest{
     1: string topic_name
     2: string part_name
-    3: i64    offset
-    4: binary meg
+    3: i64    start_index
+    4: i64    end_index
+    5: binary msg
 }
 
 struct PubResponse{

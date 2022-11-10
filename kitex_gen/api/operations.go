@@ -2319,10 +2319,11 @@ func (p *SubResponse) Field1DeepEqual(src bool) bool {
 }
 
 type PubRequest struct {
-	TopicName string `thrift:"topic_name,1" json:"topic_name"`
-	PartName  string `thrift:"part_name,2" json:"part_name"`
-	Offset    int64  `thrift:"offset,3" json:"offset"`
-	Meg       []byte `thrift:"meg,4" json:"meg"`
+	TopicName  string `thrift:"topic_name,1" json:"topic_name"`
+	PartName   string `thrift:"part_name,2" json:"part_name"`
+	StartIndex int64  `thrift:"start_index,3" json:"start_index"`
+	EndIndex   int64  `thrift:"end_index,4" json:"end_index"`
+	Msg        []byte `thrift:"msg,5" json:"msg"`
 }
 
 func NewPubRequest() *PubRequest {
@@ -2337,12 +2338,16 @@ func (p *PubRequest) GetPartName() (v string) {
 	return p.PartName
 }
 
-func (p *PubRequest) GetOffset() (v int64) {
-	return p.Offset
+func (p *PubRequest) GetStartIndex() (v int64) {
+	return p.StartIndex
 }
 
-func (p *PubRequest) GetMeg() (v []byte) {
-	return p.Meg
+func (p *PubRequest) GetEndIndex() (v int64) {
+	return p.EndIndex
+}
+
+func (p *PubRequest) GetMsg() (v []byte) {
+	return p.Msg
 }
 func (p *PubRequest) SetTopicName(val string) {
 	p.TopicName = val
@@ -2350,18 +2355,22 @@ func (p *PubRequest) SetTopicName(val string) {
 func (p *PubRequest) SetPartName(val string) {
 	p.PartName = val
 }
-func (p *PubRequest) SetOffset(val int64) {
-	p.Offset = val
+func (p *PubRequest) SetStartIndex(val int64) {
+	p.StartIndex = val
 }
-func (p *PubRequest) SetMeg(val []byte) {
-	p.Meg = val
+func (p *PubRequest) SetEndIndex(val int64) {
+	p.EndIndex = val
+}
+func (p *PubRequest) SetMsg(val []byte) {
+	p.Msg = val
 }
 
 var fieldIDToName_PubRequest = map[int16]string{
 	1: "topic_name",
 	2: "part_name",
-	3: "offset",
-	4: "meg",
+	3: "start_index",
+	4: "end_index",
+	5: "msg",
 }
 
 func (p *PubRequest) Read(iprot thrift.TProtocol) (err error) {
@@ -2414,8 +2423,18 @@ func (p *PubRequest) Read(iprot thrift.TProtocol) (err error) {
 				}
 			}
 		case 4:
-			if fieldTypeId == thrift.STRING {
+			if fieldTypeId == thrift.I64 {
 				if err = p.ReadField4(iprot); err != nil {
+					goto ReadFieldError
+				}
+			} else {
+				if err = iprot.Skip(fieldTypeId); err != nil {
+					goto SkipFieldError
+				}
+			}
+		case 5:
+			if fieldTypeId == thrift.STRING {
+				if err = p.ReadField5(iprot); err != nil {
 					goto ReadFieldError
 				}
 			} else {
@@ -2475,16 +2494,25 @@ func (p *PubRequest) ReadField3(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadI64(); err != nil {
 		return err
 	} else {
-		p.Offset = v
+		p.StartIndex = v
 	}
 	return nil
 }
 
 func (p *PubRequest) ReadField4(iprot thrift.TProtocol) error {
+	if v, err := iprot.ReadI64(); err != nil {
+		return err
+	} else {
+		p.EndIndex = v
+	}
+	return nil
+}
+
+func (p *PubRequest) ReadField5(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadBinary(); err != nil {
 		return err
 	} else {
-		p.Meg = []byte(v)
+		p.Msg = []byte(v)
 	}
 	return nil
 }
@@ -2509,6 +2537,10 @@ func (p *PubRequest) Write(oprot thrift.TProtocol) (err error) {
 		}
 		if err = p.writeField4(oprot); err != nil {
 			fieldId = 4
+			goto WriteFieldError
+		}
+		if err = p.writeField5(oprot); err != nil {
+			fieldId = 5
 			goto WriteFieldError
 		}
 
@@ -2565,10 +2597,10 @@ WriteFieldEndError:
 }
 
 func (p *PubRequest) writeField3(oprot thrift.TProtocol) (err error) {
-	if err = oprot.WriteFieldBegin("offset", thrift.I64, 3); err != nil {
+	if err = oprot.WriteFieldBegin("start_index", thrift.I64, 3); err != nil {
 		goto WriteFieldBeginError
 	}
-	if err := oprot.WriteI64(p.Offset); err != nil {
+	if err := oprot.WriteI64(p.StartIndex); err != nil {
 		return err
 	}
 	if err = oprot.WriteFieldEnd(); err != nil {
@@ -2582,10 +2614,10 @@ WriteFieldEndError:
 }
 
 func (p *PubRequest) writeField4(oprot thrift.TProtocol) (err error) {
-	if err = oprot.WriteFieldBegin("meg", thrift.STRING, 4); err != nil {
+	if err = oprot.WriteFieldBegin("end_index", thrift.I64, 4); err != nil {
 		goto WriteFieldBeginError
 	}
-	if err := oprot.WriteBinary([]byte(p.Meg)); err != nil {
+	if err := oprot.WriteI64(p.EndIndex); err != nil {
 		return err
 	}
 	if err = oprot.WriteFieldEnd(); err != nil {
@@ -2596,6 +2628,23 @@ WriteFieldBeginError:
 	return thrift.PrependError(fmt.Sprintf("%T write field 4 begin error: ", p), err)
 WriteFieldEndError:
 	return thrift.PrependError(fmt.Sprintf("%T write field 4 end error: ", p), err)
+}
+
+func (p *PubRequest) writeField5(oprot thrift.TProtocol) (err error) {
+	if err = oprot.WriteFieldBegin("msg", thrift.STRING, 5); err != nil {
+		goto WriteFieldBeginError
+	}
+	if err := oprot.WriteBinary([]byte(p.Msg)); err != nil {
+		return err
+	}
+	if err = oprot.WriteFieldEnd(); err != nil {
+		goto WriteFieldEndError
+	}
+	return nil
+WriteFieldBeginError:
+	return thrift.PrependError(fmt.Sprintf("%T write field 5 begin error: ", p), err)
+WriteFieldEndError:
+	return thrift.PrependError(fmt.Sprintf("%T write field 5 end error: ", p), err)
 }
 
 func (p *PubRequest) String() string {
@@ -2617,10 +2666,13 @@ func (p *PubRequest) DeepEqual(ano *PubRequest) bool {
 	if !p.Field2DeepEqual(ano.PartName) {
 		return false
 	}
-	if !p.Field3DeepEqual(ano.Offset) {
+	if !p.Field3DeepEqual(ano.StartIndex) {
 		return false
 	}
-	if !p.Field4DeepEqual(ano.Meg) {
+	if !p.Field4DeepEqual(ano.EndIndex) {
+		return false
+	}
+	if !p.Field5DeepEqual(ano.Msg) {
 		return false
 	}
 	return true
@@ -2642,14 +2694,21 @@ func (p *PubRequest) Field2DeepEqual(src string) bool {
 }
 func (p *PubRequest) Field3DeepEqual(src int64) bool {
 
-	if p.Offset != src {
+	if p.StartIndex != src {
 		return false
 	}
 	return true
 }
-func (p *PubRequest) Field4DeepEqual(src []byte) bool {
+func (p *PubRequest) Field4DeepEqual(src int64) bool {
 
-	if bytes.Compare(p.Meg, src) != 0 {
+	if p.EndIndex != src {
+		return false
+	}
+	return true
+}
+func (p *PubRequest) Field5DeepEqual(src []byte) bool {
+
+	if bytes.Compare(p.Msg, src) != 0 {
 		return false
 	}
 	return true
