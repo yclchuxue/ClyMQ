@@ -76,6 +76,13 @@ func (c *Client) ReduceSubScription(name string) {
 	c.mu.Unlock()
 }
 
+func (c *Client) GetStat() string{
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.state
+}
+
 func (c *Client) GetCli() *client_operations.Client {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -321,8 +328,8 @@ func (p *Part) SendOneBlock(name string, cli *client_operations.Client, start_in
 					break
 				}
 			}
-			break
 			p.mu.Unlock()
+			break
 		} else {
 			in = p.buffer_node[in].End_index + 1
 		}
