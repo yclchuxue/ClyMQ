@@ -72,6 +72,11 @@ type sub struct{
 	option int8
 }
 
+type retsub struct{
+	size int
+	parts []PartKey
+}
+
 type startget struct{
 	cli_name  	string
     topic_name	string
@@ -80,23 +85,29 @@ type startget struct{
 	option 		int8
 }
 
+func NewServer() *Server {
+	return &Server{
+		// topics: make(map[string]*Topic),
+		// consumers: make(map[string]*Client),
+		mu:sync.RWMutex{},
+	}
+}
+
 func (s *Server) make() {
 
-	s.topics = make(map[string]*Topic)
-	// s.groups = make(map[string]Group)
-	// s.sublist = make(map[string]*SubScription)
 	s.consumers = make(map[string]*Client)
-	// s.groups["default"] = Group{}
-
-	s.mu = sync.RWMutex{}
+	s.topics = make(map[string]*Topic)
 
 	name = GetIpport()
+	
+	s.CheckList()
 }
 
 func (s *Server)CheckList(){
 	str, _ := os.Getwd()
-	str += name
+	str += "/" + name
 	ret := CheckFileOrList(str)
+	// DEBUG(dLog, "Check list %v is %v\n", str, ret)
 	if !ret {
 		CreateList(str)
 	}
@@ -104,8 +115,11 @@ func (s *Server)CheckList(){
 
 func (s *Server) InfoHandle(ipport string) error {
 
+	DEBUG(dLog, "get consumer's ip_port %v\n", ipport)
+
 	client, err := client_operations.NewClient("client", client2.WithHostPorts(ipport))
 	if err == nil {
+		DEBUG(dLog, "connect consumer server successful\n")
 		s.mu.Lock()
 		consumer, ok := s.consumers[ipport]
 		if !ok {
@@ -114,11 +128,11 @@ func (s *Server) InfoHandle(ipport string) error {
 		}
 		go s.CheckConsumer(consumer)
 		s.mu.Unlock()
-
+		DEBUG(dLog, "return resp to consumer\n")
 		return nil
 	}
 	
-	DEBUG(dError, "Connect client %v failed\n", ipport)
+	DEBUG(dError, "Connect client failed")
 
 	return err
 }
@@ -186,25 +200,28 @@ func (s *Server)CheckConsumer(client *Client){
 }
 
 // subscribe 订阅
-func (s *Server) SubHandle(req sub) error{
+func (s *Server) SubHandle(req sub) (resp retsub, err error){
 	s.mu.Lock()
+	DEBUG(dLog, "get sub information\n")
 	top, ok := s.topics[req.topic]
 	if !ok {
-		return errors.New("this topic not in this broker")
+		return resp, errors.New("this topic not in this broker")
 	}
 	sub, err := top.AddSubScription(req)
 	if err != nil{
 		s.consumers[req.consumer].AddSubScription(sub)
 	}
-
+	resp.parts = GetPartKeyArray(s.topics[req.topic].GetParts())
+	resp.size = len(resp.parts)
 	s.mu.Unlock()
 
-	return nil
+	return resp, nil
 }
 
 func (s *Server)UnSubHandle(req sub) error {
 
 	s.mu.Lock()
+	DEBUG(dLog, "get unsub information\n")
 	top, ok := s.topics[req.topic]
 	if !ok {
 		return errors.New("this topic not in this broker")
@@ -220,9 +237,11 @@ func (s *Server)UnSubHandle(req sub) error {
 
 
 func (s *Server) PushHandle(req push) error {
-
+	DEBUG(dLog, "get Message form producer\n")
 	topic, ok := s.topics[req.topic]
+	// DEBUG(dLog, "after topic\n")
 	if !ok {
+		DEBUG(dLog, "New a Topic name is %v\n", req.topic)
 		topic = NewTopic(req)
 		s.mu.Lock()
 		s.topics[req.topic] = topic
@@ -234,8 +253,6 @@ func (s *Server) PushHandle(req push) error {
 }
 
 func (s *Server) PullHandle(req pull) ( retpull, error) {
-
-
 
 	return retpull{}, nil
 }

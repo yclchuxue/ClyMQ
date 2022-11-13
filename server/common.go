@@ -2,10 +2,14 @@ package server
 
 import (
 	"ClyMQ/kitex_gen/api/client_operations"
-	"fmt"
 	"net"
 	"os"
+	"runtime"
 )
+
+type PartKey struct{
+	name string `json:"name"`
+}
 
 func GetIpport() string {
 	interfaces, err := net.Interfaces()
@@ -20,21 +24,27 @@ func GetIpport() string {
 	return ipport
 }
 
-func CheckFileOrList(filename string) (ret bool) {
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		ret = false
+func CheckFileOrList(path string) (ret bool) {
+	_, err := os.Stat(path)    //os.Stat获取文件信息
+	if err != nil {
+		return os.IsExist(err)
 	}
-	ret = true
-	return ret
+	return true
 }
 
 func CreateList(path string) error {
-	err := os.Mkdir(path, 0666)
-	if err != nil {
-		fmt.Println("mkdir ", path, "error")
+
+	ret := CheckFileOrList(path)
+
+	if !ret {
+		err := os.Mkdir(path, 0775)
+		if err != nil {
+			_, file, line, _ := runtime.Caller(1)
+			DEBUG(dError, "%v:%v mkdir %v error %v",file, line, path, err.Error())
+		}
 	}
 
-	return err
+	return nil
 }
 
 func CreateFile(path string) (file *os.File, err error) {
@@ -52,6 +62,19 @@ func GetClisArray(clis map[string]*client_operations.Client) []string {
 
 	return array
 }
+
+func GetPartKeyArray(parts map[string]*Partition) []PartKey {
+	var array []PartKey
+
+	for part_name := range parts {
+		array = append(array, PartKey{
+			name: part_name,
+		})
+	}
+
+	return array
+}
+
 
 func CheckChangeCli(old map[string]*client_operations.Client, new []string) (reduce, add []string) {
 	for _, new_cli := range new {

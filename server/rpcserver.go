@@ -2,7 +2,8 @@ package server
 
 import (
 	"ClyMQ/kitex_gen/api"
-	
+	"encoding/json"
+
 	"ClyMQ/kitex_gen/api/server_operations"
 	"context"
 	"fmt"
@@ -12,32 +13,38 @@ import (
 
 type RPCServer struct {
 	// me int64
+	srv server.Server
 
-	server Server
+	server *Server
 }
 
 func NewRpcServer() RPCServer {
 	LOGinit()
-	return RPCServer{}
+	return RPCServer{
+		server: NewServer(),
+	}
 }
 
 func (s *RPCServer) Start(opts []server.Option) error {
 	svr := server_operations.NewServer(s, opts...)
-
+	s.srv = svr
 	s.server.make()
-	
-	go func() {
-		err := svr.Run()
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-	}()
+
+	DEBUG(dLog, "Broker start rpcserver\n")
+	err := svr.Run()
+
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 
 	return nil
 }
 
+func (s *RPCServer)ShutDown_server(){
+	s.srv.Stop()
+}
+
 func (s *RPCServer) Push(ctx context.Context, req *api.PushRequest) (resp *api.PushResponse, err error) {
-	fmt.Println(req)
 	
 	err = s.server.PushHandle(push{
 		producer: req.Producer,
@@ -81,15 +88,21 @@ func (s *RPCServer) Info(ctx context.Context, req *api.InfoRequest) (resp *api.I
 //订阅
 func (s *RPCServer) Sub(ctx context.Context, req *api.SubRequest) (resp *api.SubResponse, err error) {
 
-	err = s.server.SubHandle(sub{
+	ret, err := s.server.SubHandle(sub{
 		consumer: req.Consumer,
 		topic: req.Topic,
 		key: req.Key,
 		option: req.Option,
 	})
 
+	data_parts, _ := json.Marshal(ret.parts)
+
 	if err == nil{
-		return &api.SubResponse{Ret: true}, nil
+		return &api.SubResponse{
+			Ret: true,
+			Size: int64(ret.size),
+			Parts: data_parts,
+		}, nil
 	}
 
 	return &api.SubResponse{Ret: false}, err

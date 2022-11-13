@@ -60,9 +60,10 @@ func LOGinit() {
 func DEBUG(topic logTopic, format string, a ...interface{}) {
 	if 3 >= 1 {
 		mu.Lock()
-		time := time.Since(debugStart).Microseconds()
-		time = time / 100
-		prefix := fmt.Sprintf("%06d %v ", time, string(topic))
+		// time := time.Since(debugStart).Microseconds()
+		// time = time / 100
+		// prefix := fmt.Sprintf("%06d %v ", time, string(topic))
+		prefix := fmt.Sprintf("%v ", string(topic))
 		format = prefix + format
 		fmt.Printf(format, a...)
 		mu.Unlock()

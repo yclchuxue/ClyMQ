@@ -32,7 +32,7 @@ func (f *File) OpenFile() *os.File {
 
 func(f *File) GetIndex(file *os.File) int64 {
 	f.mu.RLock()
-	var index int64
+	// var index int64
 
 	/*
 	读取文件，获取该partition的最后一个index
@@ -40,7 +40,7 @@ func(f *File) GetIndex(file *os.File) int64 {
 
 	f.mu.RUnlock()
 
-	return index
+	return 0
 }
 
 func (f *File) WriteFile(file *os.File, node Key, msg []Message) bool {
@@ -82,10 +82,10 @@ func (f *File) ReadFile(file *os.File, offset int64) (Key, []Message, error) {
 	size, err := file.ReadAt(data_node, offset)
 
 	if size != NODE_SIZE {
-		return node, msg,  errors.New("Read node size is not NODE_SIZE")
+		return node, msg,  errors.New("read node size is not NODE_SIZE")
 	}
 	if err == io.EOF {    //读到文件末尾
-		return node, msg, errors.New("Read All file, do not find this index")
+		return node, msg, errors.New("read All file, do not find this index")
 	}
 
 	json.Unmarshal(data_node, &node)
@@ -93,10 +93,10 @@ func (f *File) ReadFile(file *os.File, offset int64) (Key, []Message, error) {
 	size, err = file.ReadAt(data_msg, offset + int64(f.node_size) + int64(node.Size) )
 
 	if size != NODE_SIZE {
-		return node, msg,  errors.New("Read msg size is not NODE_SIZE")
+		return node, msg,  errors.New("read msg size is not NODE_SIZE")
 	}
 	if err == io.EOF {    //读到文件末尾
-		return node, msg, errors.New("Read All file, do not find this index")
+		return node, msg, errors.New("read All file, do not find this index")
 	}
 
 	json.Unmarshal(data_msg, &msg)
@@ -116,10 +116,10 @@ func (f *File) FindOffset(file *os.File, index int64) (int64, error){
 		f.mu.RUnlock()
 
 		if size != NODE_SIZE {
-			return int64(-1),  errors.New("Read node size is not NODE_SIZE")
+			return int64(-1),  errors.New("read node size is not NODE_SIZE")
 		}
 		if err == io.EOF {    //读到文件末尾
-			return index, errors.New("Read All file, do not find this index")
+			return index, errors.New("read All file, do not find this index")
 		}
 
 		json.Unmarshal(data_node, &node)

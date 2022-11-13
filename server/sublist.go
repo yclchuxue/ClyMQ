@@ -34,6 +34,7 @@ func NewTopic(req push) *Topic {
 		rmu:     sync.RWMutex{},
 		Parts:   make(map[string]*Partition),
 		subList: make(map[string]*SubScription),
+		Files: make(map[string]*File),
 	}
 	str, _ := os.Getwd()
 	str += "/" + name + "/" + req.topic
@@ -59,6 +60,13 @@ func (t *Topic) GetConfig(sub string) *Config {
 	return t.subList[sub].GetConfig()
 }
 
+func (t *Topic) GetParts() map[string]*Partition {
+	t.rmu.RLock()
+	defer t.rmu.RUnlock()
+
+	return t.Parts
+}
+
 func (t *Topic) addMessage(req push) error {
 	part, ok := t.Parts[req.key]
 	if !ok {
@@ -66,11 +74,13 @@ func (t *Topic) addMessage(req push) error {
 		t.Files[req.key] = file
 		t.Parts[req.key] = part
 	}
-
+	DEBUG(dLog, "add before lock in topic addmsg\n")
 	part.mu.Lock()
-	part.addMessage(req)
+	DEBUG(dLog, "add had lock in topic addmsg\n")
 
 	part.mu.Unlock()
+
+	part.addMessage(req)
 
 	return nil
 }
@@ -159,7 +169,7 @@ func NewPartition(req push) (*Partition, *File) {
 	if err != nil {
 		fmt.Println("create ", str, "failed")
 	}
-	// part.addMessage(req)
+	part.addMessage(req)
 
 	return part, part.file
 }
@@ -180,7 +190,7 @@ func (p *Partition) addMessage(req push) {
 		Part_name:  req.key,
 		Msg:        []byte(req.message),
 	}
-
+	DEBUG(dLog, "part_name %v add message index is %v\n", p.key, p.index)
 	p.queue = append(p.queue, msg)
 
 	if p.index-p.start_index >= 10 {
