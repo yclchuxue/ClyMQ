@@ -136,7 +136,20 @@ func (s *Server)StartGet(start startget) (err error) {
 	err = nil
 	switch start.option{
 	case TOPIC_NIL_PTP:
+		s.mu.RLock()
+		defer s.mu.RUnlock()
 
+		sub_name := GetStringfromSub(start.topic_name, start.part_name, start.option)
+		ret := s.consumers[start.cli_name].CheckSubscription(sub_name)
+		sub := s.consumers[start.cli_name].GetSub(sub_name)
+		if ret {  //该订阅存在
+
+			//添加到Config后会进行负载均衡，生成新的配置，然后执行新的配置
+			sub.AddConsumerInConfig(start, s.consumers[start.cli_name].GetCli())
+			
+		}else{    //该订阅不存在
+			err = errors.New("this subscription is not exist")
+		}
 
 	case TOPIC_KEY_PSB:
 		s.mu.RLock()
@@ -146,15 +159,15 @@ func (s *Server)StartGet(start startget) (err error) {
 		ret := s.consumers[start.cli_name].CheckSubscription(sub_name)
 		
 		if ret {  //该订阅存在
-			clis := make(map[string]*client_operations.Client)
-			clis[start.cli_name] = s.consumers[start.cli_name].GetCli()
-			file := s.topics[start.topic_name].GetFile(start.part_name)
-			go s.consumers[start.cli_name].StartPart(start, clis, file)
+			// clis := make(map[string]*client_operations.Client)
+			// clis[start.cli_name] = s.consumers[start.cli_name].GetCli()
+			// file := s.topics[start.topic_name].GetFile(start.part_name)
+			// go s.consumers[start.cli_name].StartPart(start, clis, file)
 		}else{    //该订阅不存在
-			err = errors.New("This subscription is not exist")
+			err = errors.New("this subscription is not exist")
 		}
 	default:
-		err = errors.New("The option is not PTP or PSB")
+		err = errors.New("the option is not PTP or PSB")
 	}
 
 	return err
@@ -166,10 +179,7 @@ func (s *Server)CheckConsumer(client *Client){
 	if shutdown { //该consumer已关闭，平衡subscription
 		client.mu.Lock()
 		for _, subscription := range client.subList{
-			subscription.ShutdownConsumer(client.name)
-			/*
-			将consumer中的Part关闭
-			*/
+			subscription.ShutdownConsumerInGroup(client.name)
 		}
 		client.mu.Unlock()
 	}
@@ -207,7 +217,6 @@ func (s *Server)UnSubHandle(req sub) error {
 	s.mu.Unlock()
 	return nil
 }
-
 
 
 func (s *Server) PushHandle(req push) error {
