@@ -2,6 +2,10 @@ package clients
 
 import "net"
 
+type PartKey struct{
+	name string `json:"name"`
+}
+
 func GetIpport() string{
 	interfaces, err := net.Interfaces()
 	ipport := ""

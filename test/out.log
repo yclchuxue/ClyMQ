@@ -1,0 +1,53 @@
+000008 LOG1 Check list /home/yclchuxue/go/src/ClyMQ/test/70:b5:e8:a4:ec:541c:bf:c0:41:a7:f5 is false
+000009 LOG1 had make
+2022/11/13 17:38:13.560147 server.go:81: [Info] KITEX: server listen at addr=[::]:7778
+PushRequest({Producer:70:b5:e8:a4:ec:541c:bf:c0:41:a7:f5producter_test1 Topic:phone_number Key:yclchuxue Message:18788888888})
+000023 LOG1 get a message
+get a message
+2022/11/13 17:38:13.560779 default_server_handler.go:208: [Error] KITEX: processing request error, remoteService=, remoteAddr=127.0.0.1:54178, error=panic: [happened in biz handler] assignment to entry in nil map
+stack=goroutine 50 [running]:
+runtime/debug.Stack()
+	/usr/local/go/src/runtime/debug/stack.go:24 +0x65
+github.com/cloudwego/kitex/server.(*server).invokeHandleEndpoint.func1.1()
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/server/server.go:272 +0xba
+panic({0x9a6c40, 0xb08ef0})
+	/usr/local/go/src/runtime/panic.go:838 +0x207
+ClyMQ/server.NewTopic({{0xc000518080, 0x31}, {0xc000500050, 0xc}, {0xc000500060, 0x9}, {0xc000500070, 0xb}})
+	/home/yclchuxue/go/src/ClyMQ/server/sublist.go:42 +0x18f
+ClyMQ/server.(*Server).PushHandle(0xc000314930, {{0xc000518080, 0x31}, {0xc000500050, 0xc}, {0xc000500060, 0x9}, {0xc000500070, 0xb}})
+	/home/yclchuxue/go/src/ClyMQ/server/server.go:238 +0x17f
+ClyMQ/server.(*RPCServer).Push(0xc000122be8, {0x0?, 0xc000500028?}, 0xc00050a180)
+	/home/yclchuxue/go/src/ClyMQ/server/rpcserver.go:46 +0x110
+ClyMQ/kitex_gen/api/server_operations.pushHandler({0xb0e9e0, 0xc000506300}, {0x9dfde0?, 0xc000122be8}, {0xa2c460?, 0xc000514018}, {0xa2c5e0?, 0xc000514020})
+	/home/yclchuxue/go/src/ClyMQ/kitex_gen/api/server_operations/server_operations.go:45 +0xb1
+github.com/cloudwego/kitex/server.(*server).invokeHandleEndpoint.func1({0xb0e9e0, 0xc000506300}, {0xa2c460, 0xc000514018}, {0xa2c5e0, 0xc000514020})
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/server/server.go:280 +0x291
+github.com/cloudwego/kitex/pkg/remote/trans.(*svrTransHandler).OnMessage(0xc000032100, {0xb0e9e0, 0xc000506300}, {0xb121a0?, 0xc000532000?}, {0xb121a0, 0xc000532080})
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans/default_server_handler.go:177 +0x90
+github.com/cloudwego/kitex/pkg/remote/trans/detection.(*svrTransHandler).OnMessage(0xc00000e018?, {0xb0e9e0, 0xc000506300}, {0xb121a0, 0xc000532000}, {0xb121a0, 0xc000532080})
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans/detection/server_handler.go:126 +0x5e
+github.com/cloudwego/kitex/pkg/remote.(*TransPipeline).OnMessage(0xc000032140, {0xb0e9e0?, 0xc000506180?}, {0xb121a0, 0xc000532000}, {0xb121a0?, 0xc000532080?})
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans_pipeline.go:159 +0xdd
+github.com/cloudwego/kitex/pkg/remote/trans.(*svrTransHandler).OnRead(0xc000032100, {0xb0e9e0, 0xc000506180}, {0x7fc8a068a100, 0xc00051a000})
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans/default_server_handler.go:156 +0x416
+github.com/cloudwego/kitex/pkg/remote/trans/detection.(*svrTransHandler).OnRead(0xc000088020, {0xb0e9e0, 0xc000506180}, {0x7fc8a068a100?, 0xc00051a000})
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans/detection/server_handler.go:110 +0x1ab
+github.com/cloudwego/kitex/pkg/remote.(*TransPipeline).OnRead(0xc000032140?, {0xb0e9e0?, 0xc000506180?}, {0x7fc8a068a100, 0xc00051a000})
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans_pipeline.go:132 +0x96
+github.com/cloudwego/kitex/pkg/remote/trans/netpoll.(*transServer).onConnRead(0xc0000940c0, {0xb0e9e0, 0xc000506180}, {0xb11db0?, 0xc00051a000})
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans/netpoll/trans_server.go:154 +0x73
+github.com/cloudwego/netpoll.(*connection).onRequest.func2(0x0?)
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/netpoll@v0.2.6/connection_onevent.go:161 +0x32
+github.com/cloudwego/netpoll.(*connection).onProcess.func1()
+	/home/yclchuxue/go/pkg/mod/github.com/cloudwego/netpoll@v0.2.6/connection_onevent.go:184 +0x55
+github.com/bytedance/gopkg/util/gopool.(*worker).run.func1.1(0x2?, 0x0?)
+	/home/yclchuxue/go/pkg/mod/github.com/bytedance/gopkg@v0.0.0-20220531084716-665b4f21126f/util/gopool/worker.go:69 +0x66
+github.com/bytedance/gopkg/util/gopool.(*worker).run.func1()
+	/home/yclchuxue/go/pkg/mod/github.com/bytedance/gopkg@v0.0.0-20220531084716-665b4f21126f/util/gopool/worker.go:70 +0xe5
+created by github.com/bytedance/gopkg/util/gopool.(*worker).run
+	/home/yclchuxue/go/pkg/mod/github.com/bytedance/gopkg@v0.0.0-20220531084716-665b4f21126f/util/gopool/worker.go:41 +0x56
+--- FAIL: TestNet (0.00s)
+    producer_test.go:49: err != remote or network error[remote]: panic: [happened in biz handler] assignment to entry in nil mapor resp.Ret == false
+FAIL
+FAIL	command-line-arguments	0.007s
+FAIL
