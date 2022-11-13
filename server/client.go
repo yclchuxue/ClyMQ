@@ -21,7 +21,6 @@ type Client struct {
 	name     string
 	state    string
 	consumer client_operations.Client
-	parts    map[string]Part
 
 	// ingroups []*Group
 	subList map[string]*SubScription // 若这个consumer关闭则遍历这些订阅并修改
@@ -33,7 +32,6 @@ func NewClient(ipport string, con client_operations.Client) *Client {
 		name:     ipport,
 		consumer: con,
 		state:    ALIVE,
-		parts:    make(map[string]Part),
 		subList:  make(map[string]*SubScription),
 	}
 	return client
@@ -76,7 +74,7 @@ func (c *Client) ReduceSubScription(name string) {
 	c.mu.Unlock()
 }
 
-func (c *Client) GetStat() string{
+func (c *Client) GetStat() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -90,15 +88,11 @@ func (c *Client) GetCli() *client_operations.Client {
 	return &c.consumer
 }
 
-func (c *Client) StartPart(start startget, clis map[string]*client_operations.Client, file *File) {
-	c.mu.Lock()
-	part, ok := c.parts[start.part_name]
-	if !ok {
-		part = NewPart(start, clis, file)
-		c.parts[start.part_name] = part
-	}
-	go part.Start()
-	c.mu.Unlock()
+func (c *Client) GetSub(sub_name string) *SubScription {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.subList[sub_name]
 }
 
 type Part struct {
@@ -138,34 +132,38 @@ const (
 )
 
 type Done struct {
-	in  int64
-	err string
+	in   int64
+	err  string
 	name string
-	cli *client_operations.Client
+	cli  *client_operations.Client
 	// add a consumer name for start to send
 }
 
-func NewPart(start startget, clis map[string]*client_operations.Client, file *File) Part {
-	return Part{
-		mu:          sync.RWMutex{},
-		topic_name:  start.topic_name,
-		part_name:   start.part_name,
-		option:      start.option,
-		index:       start.index,
+func NewPart(topic_name, part_name string, file *File) *Part {
+
+	part := &Part{
+		mu:         sync.RWMutex{},
+		topic_name: topic_name,
+		part_name:  part_name,
+		option:     TOPIC_NIL_PTP,
+
 		buffer_node: make(map[int64]Key),
 		buffer_msg:  make(map[int64][]Message),
 		file:        file,
-		clis:        clis,
-		state:       ALIVE,
+		clis:        make(map[string]*client_operations.Client),
+		state:       DOWN,
 
 		part_had: make(chan Done),
 		buf_done: make(map[int64]string),
 	}
+
+	part.index = 0
+
+	return part
 }
 
 func (p *Part) Start() {
 
-	
 	// open file
 	p.fd = *p.file.OpenFile()
 	offset, err := p.file.FindOffset(&p.fd, p.index)
@@ -185,31 +183,45 @@ func (p *Part) Start() {
 
 	go p.GetDone()
 
-	for {
-		p.mu.RLock()
-		if p.state == DOWN {
-			break
-		}
-		p.mu.RUnlock()
-
-		/*
-			循环clis，按块发送信息，例如两个consumer消费这个part，我们go两个协程去发送，
-			go后使用条件变量或select管道来判断是否成功，成功则继续，失败或超时则另外考虑；
-
-			从文件取出后将块序号放入 buf_do
-			从管道读出确认后将序号放入 buf_done
-		*/
-
-		p.mu.RLock()
-		for name, cli := range p.clis {
-			go p.SendOneBlock(name, cli, p.start_index)
-		}
-		p.mu.RUnlock()
+	p.mu.Lock()
+	if p.state == DOWN {
+		p.state = ALIVE
+	} else {
+		p.mu.Unlock()
+		DEBUG(dError, "the part is ALIVE in before this start\n")
+		return
 	}
+
+	for name, cli := range p.clis {
+		go p.SendOneBlock(name, cli)
+	}
+	p.mu.Unlock()
+
 }
 
-func (p *Part) AddConsumer() {
+func (p *Part) ClosePart() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
+	p.state = DOWN
+}
+
+func (p *Part) UpdateClis(cli_names []string, Clis map[string]*client_operations.Client) {
+	p.mu.Lock()
+	reduce, add := CheckChangeCli(p.clis, cli_names)
+	for _, name := range reduce {
+		delete(p.clis, name)
+		//删除一个consumer，在下一次发送时会检查
+		//是否存在，则关闭这个consumer的循环发送
+	}
+
+	for _, name := range add {
+		p.clis[name] = Clis[name] //新加入一个负责该分片的consumer
+
+		go p.SendOneBlock(name, p.clis[name]) //开启协程，发送消息
+	}
+
+	p.mu.Unlock()
 }
 
 func (p *Part) AddBlock() error {
@@ -235,55 +247,63 @@ func (p *Part) AddBlock() error {
 
 func (p *Part) GetDone() {
 
-	for {
-		select {
-		case do := <-p.part_had:
-			if do.err == OK { // 发送成功，buf_do--, buf_done++, 补充buf_do
+	for do := range p.part_had {
+		if do.err == OK { // 发送成功，buf_do--, buf_done++, 补充buf_do
 
-				err := p.AddBlock()
+			err := p.AddBlock()
 
-				p.mu.Lock()
-				if err != nil {
-					DEBUG(dError, err.Error())
-				}
-
-				p.buf_done[do.in] = HADDO
-				in := p.start_index
-
-				for {
-					if p.buf_done[in] == HADDO {
-						p.start_index = p.buffer_node[in].End_index + 1
-						delete(p.buf_done, in)
-						delete(p.buffer_msg, in)
-						delete(p.buffer_node, in)
-						in = p.start_index
-					} else {
-						break
-					}
-				}
-
-				go p.SendOneBlock(do.name, do.cli, p.start_index)
-
-				p.mu.Unlock()
-
+			p.mu.Lock()
+			if err != nil {
+				DEBUG(dError, err.Error())
 			}
-			if do.err == TIMEOUT { 	//超时  已尝试发送3次
-									//认为该消费者掉线
-				p.mu.Lock()
-				delete(p.clis, do.name)    	//删除该消费者    考虑是否需要    
-											//判断是否有消费者存在，若无则关闭协程和文件描述符
-				p.mu.Unlock()
+
+			p.buf_done[do.in] = HADDO
+			in := p.start_index
+
+			for {
+				if p.buf_done[in] == HADDO {
+					p.start_index = p.buffer_node[in].End_index + 1
+					delete(p.buf_done, in)
+					delete(p.buffer_msg, in)
+					delete(p.buffer_node, in)
+					in = p.start_index
+				} else {
+					break
+				}
 			}
+
+			go p.SendOneBlock(do.name, do.cli)
+
+			p.mu.Unlock()
+
 		}
+		if do.err == TIMEOUT { //超时  已尝试发送3次
+			//认为该消费者掉线
+			p.mu.Lock()
+			delete(p.clis, do.name) //删除该消费者    考虑是否需要
+			//判断是否有消费者存在，若无则关闭协程和文件描述符
+			p.mu.Unlock()
+		}
+
 	}
 }
 
-func (p *Part) SendOneBlock(name string, cli *client_operations.Client, start_index int64) {
+func (p *Part) SendOneBlock(name string, cli *client_operations.Client) {
 
-	in := start_index
+	var in int64
+	in = 0
 	num := 0
 	for {
 		p.mu.Lock()
+		if in == 0 {
+			in = p.start_index
+		}
+
+		if _, ok := p.clis[name]; !ok { //不存在，不再负责这个分片
+			p.mu.Unlock()
+			return
+		}
+
 		if p.buf_done[in] == NOTDO {
 
 			msg, ok1 := p.buffer_msg[in]
@@ -303,12 +323,12 @@ func (p *Part) SendOneBlock(name string, cli *client_operations.Client, start_in
 				if err != nil { //超时等原因
 					DEBUG(dError, err.Error())
 					num++
-					if num >= AGAIN_NUM {  //超时三次，将不再向其发送
+					if num >= AGAIN_NUM { //超时三次，将不再向其发送
 						p.part_had <- Done{
-							in:  node.Start_index,
-							err: TIMEOUT,
+							in:   node.Start_index,
+							err:  TIMEOUT,
 							name: name,
-							cli: cli,
+							cli:  cli,
 						}
 
 						p.mu.Lock()
@@ -320,10 +340,10 @@ func (p *Part) SendOneBlock(name string, cli *client_operations.Client, start_in
 
 				} else {
 					p.part_had <- Done{
-						in:  node.Start_index,
-						err: OK,
+						in:   node.Start_index,
+						err:  OK,
 						name: name,
-						cli: cli,
+						cli:  cli,
 					}
 					break
 				}
@@ -356,13 +376,6 @@ func (p *Part) Pub(cli *client_operations.Client, node Key, data []byte) error {
 	return nil
 }
 
-func (p *Part) ClosePart() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.state = DOWN
-}
-
 type Group struct {
 	rmu        sync.RWMutex
 	topic_name string
@@ -385,13 +398,13 @@ func (g *Group) RecoverClient(cli_name string) error {
 	_, ok := g.consumers[cli_name]
 	if ok {
 		if g.consumers[cli_name] {
-			return errors.New("This client is alive before")
+			return errors.New("this client is alive before")
 		} else {
 			g.consumers[cli_name] = true
 			return nil
 		}
 	} else {
-		return errors.New("Do not have this client")
+		return errors.New("do not have this client")
 	}
 }
 
