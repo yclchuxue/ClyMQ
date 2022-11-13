@@ -2,32 +2,23 @@ package main
 
 import (
 	"ClyMQ/kitex_gen/api/server_operations"
-	Server "ClyMQ/server"
-	"net"
+	
 	"testing"
+	"time"
 
 	client3 "ClyMQ/client/clients"
 
 	client2 "github.com/cloudwego/kitex/client"
-	"github.com/cloudwego/kitex/server"
+	
 )
 
-func NewBrokerAndStart(t *testing.T, port string) {
-	//start the broker server
-	addr, _ := net.ResolveTCPAddr("tcp", port)
-	var opts []server.Option
-	opts = append(opts, server.WithServiceAddr(addr))
-	rpcServer := Server.NewRpcServer()
 
-	err := rpcServer.Start(opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestNet(t *testing.T) {
+//测试该测试点需要将MQServer启动
+func TestProducerNet(t *testing.T) {
 	port := ":7778"
-	NewBrokerAndStart(t, port)
+	rpcserver := NewBrokerAndStart(t, port)
+
+	time.Sleep(2*time.Second)
 
 	client, err := server_operations.NewClient("client", client2.WithHostPorts("0.0.0.0"+port))
 
@@ -41,11 +32,13 @@ func TestNet(t *testing.T) {
 
 	err = producer.Push(client3.Message{
 		Topic_name: "phone_number",
-		Part_name:  "yclchuxue",
+		Part_name:  "ycl",
 		Msg:        "18788888888",
 	})
 
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	rpcserver.ShutDown_server()
 }
