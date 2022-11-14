@@ -2,19 +2,21 @@ package main
 
 import (
 	"ClyMQ/kitex_gen/api/server_operations"
-	
+	"fmt"
+
 	"testing"
 	"time"
 
 	client3 "ClyMQ/client/clients"
 
 	client2 "github.com/cloudwego/kitex/client"
-	
 )
-
 
 //测试该测试点需要将MQServer启动
 func TestProducerNet(t *testing.T) {
+
+	fmt.Println("Test: Producer net")
+
 	port := ":7778"
 	rpcserver := NewBrokerAndStart(t, port)
 
@@ -41,4 +43,6 @@ func TestProducerNet(t *testing.T) {
 	}
 
 	rpcserver.ShutDown_server()
+	
+	fmt.Println("  ... Passed")
 }

@@ -10,6 +10,9 @@ import (
 )
 
 func TestConsumerNet(t *testing.T) {
+
+	fmt.Println("Test: consumer net")
+
 	server_port := ":7778"
 	consumer_port := ":8000"
 	rpcserver := NewBrokerAndStart(t, server_port)
@@ -29,4 +32,6 @@ func TestConsumerNet(t *testing.T) {
 
 	consumer.ShutDown_server()
 	rpcserver.ShutDown_server()
+
+	fmt.Println("  ... Passed")
 }
