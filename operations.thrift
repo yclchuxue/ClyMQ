@@ -50,6 +50,8 @@ struct SubRequest {
 
 struct SubResponse {
     1: bool ret
+    2: i64  size
+    3: binary parts
 }
 
 service Server_Operations {

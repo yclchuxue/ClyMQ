@@ -1,0 +1,83 @@
+Running tool: /usr/local/go/bin/go test -timeout 30s -run ^TestNet$ ClyMQ/test
+
+=== RUN   TestNet
+panic: test timed out after 30s
+
+goroutine 20 [running]:
+testing.(*M).startAlarm.func1()
+        /usr/local/go/src/testing/testing.go:2029 +0x8e
+created by time.goFunc
+        /usr/local/go/src/time/sleep.go:176 +0x32
+
+goroutine 1 [chan receive]:
+testing.(*T).Run(0xc0001cd040, {0xa22026?, 0x508845?}, 0xa43e20)
+        /usr/local/go/src/testing/testing.go:1487 +0x37a
+testing.runTests.func1(0xc0002c6930?)
+        /usr/local/go/src/testing/testing.go:1839 +0x6e
+testing.tRunner(0xc0001cd040, 0xc0001abcd8)
+        /usr/local/go/src/testing/testing.go:1439 +0x102
+testing.runTests(0xc000264280?, {0xe8dd60, 0x4, 0x4}, {0x7f33f4857108?, 0x40?, 0xe98a60?})
+        /usr/local/go/src/testing/testing.go:1837 +0x457
+testing.(*M).Run(0xc000264280)
+        /usr/local/go/src/testing/testing.go:1719 +0x5d9
+main.main()
+        _testmain.go:53 +0x1aa
+
+goroutine 6 [syscall]:
+syscall.Syscall6(0xe8, 0x3, 0xc00009e000, 0x80, 0xffffffffffffffff, 0x0, 0x0)
+        /usr/local/go/src/syscall/asm_linux_amd64.s:43 +0x5
+github.com/cloudwego/netpoll.EpollWait(0xc00009e000?, {0xc00009e000?, 0x0?, 0x0?}, 0x0?)
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/netpoll@v0.2.6/sys_epoll_linux.go:48 +0xb8
+github.com/cloudwego/netpoll.(*defaultPoll).Wait(0xc00016c3c0)
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/netpoll@v0.2.6/poll_default_linux.go:93 +0x9d
+created by github.com/cloudwego/netpoll.(*manager).Run
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/netpoll@v0.2.6/poll_manager.go:106 +0x31
+
+goroutine 7 [chan receive]:
+github.com/cloudwego/netpoll.(*connection).waitRead(0xc00038e000, 0xc000010c30?)
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/netpoll@v0.2.6/connection_impl.go:394 +0xef
+github.com/cloudwego/netpoll.(*connection).Peek(0xc00038e000, 0xd?)
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/netpoll@v0.2.6/connection_impl.go:98 +0x25
+github.com/cloudwego/kitex/pkg/remote/trans/netpoll.(*netpollByteBuffer).Peek(0xd0?, 0x47?)
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans/netpoll/bytebuf.go:108 +0x65
+github.com/cloudwego/kitex/pkg/remote/codec.(*defaultCodec).Decode(0xc0002992c8, {0xad52d8, 0xc0002c6ed0}, {0xad8560, 0xc00039e080}, {0xad9080?, 0xc000386140?})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/codec/default_codec.go:146 +0xfb
+github.com/cloudwego/kitex/pkg/remote/trans.(*cliTransHandler).Read(0xc0002c6cc0, {0xad52d8, 0xc0002c6ed0}, {0x7f33cc1b30c8, 0xc00038e000}, {0xad8560?, 0xc00039e080?})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans/default_client_handler.go:76 +0x2a2
+github.com/cloudwego/kitex/pkg/remote.(*TransPipeline).Read(0x2?, {0xad52d8?, 0xc0002c6ed0?}, {0x7f33cc1b30c8?, 0xc00038e000?}, {0xad8560?, 0xc00039e080?})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/trans_pipeline.go:139 +0x3f
+github.com/cloudwego/kitex/pkg/remote/remotecli.(*client).Recv(0xc00038c0c0, {0xad52d8, 0xc0002c6ed0}, {0xad5be0, 0xc0002315e0}, {0xad8560?, 0xc00039e080})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/remote/remotecli/client.go:100 +0x78
+github.com/cloudwego/kitex/client.(*kClient).invokeHandleEndpoint.func1({0xad52d8, 0xc0002c6ed0}, {0x9f8aa0, 0xc000010c30}, {0x9f8c20, 0xc000010c38})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/client/client.go:456 +0x4b7
+github.com/cloudwego/kitex/client.newIOErrorHandleMW.func1.1({0xad52d8?, 0xc0002c6ed0?}, {0x9f8aa0?, 0xc000010c30?}, {0x9f8c20?, 0xc000010c38?})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/client/middlewares.go:141 +0x45
+github.com/cloudwego/kitex/client.newResolveMWBuilder.func1.2.1({0xad52d8, 0xc0002c6ed0}, {0x9f8aa0, 0xc000010c30}, {0x9f8c20, 0xc000010c38})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/client/middlewares.go:123 +0x505
+github.com/cloudwego/kitex/client.rpcTimeoutMW.func1.1({0xad52d8, 0xc0002c6ed0}, {0x9f8aa0?, 0xc000010c30}, {0x9f8c20?, 0xc000010c38})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/client/rpctimeout.go:100 +0x50b
+github.com/cloudwego/kitex/client.(*kClient).Call(0xc0002314f0, {0xad5268?, 0xc000026100?}, {0xa211f4, 0x4}, {0x9f8aa0?, 0xc000010c30}, {0x9f8c20?, 0xc000010c38})
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/client/client.go:330 +0x47d
+ClyMQ/kitex_gen/api/server_operations.(*kClient).Push(0xc0002dfb70, {0xad5268, 0xc000026100}, 0xc0002fce80)
+        /home/yclchuxue/go/src/ClyMQ/kitex_gen/api/server_operations/server_operations.go:146 +0xb8
+ClyMQ/kitex_gen/api/server_operations.(*kServer_OperationsClient).Push(0xc000139ec0?, {0xad5268?, 0xc000026100?}, 0xc000139ea0?, {0x0?, 0x6?, 0xc00002dbc0?})
+        /home/yclchuxue/go/src/ClyMQ/kitex_gen/api/server_operations/client.go:52 +0x92
+ClyMQ/client/clients.(*Producer).Push(0xc000139f38, {{0xa24ced, 0xc}, {0xa20ea8, 0x3}, {0xa23f08, 0xb}})
+        /home/yclchuxue/go/src/ClyMQ/client/clients/producer.go:31 +0x12c
+ClyMQ/test.TestNet(0xc0001cd1e0)
+        /home/yclchuxue/go/src/ClyMQ/test/producer_test.go:44 +0x17f
+testing.tRunner(0xc0001cd1e0, 0xa43e20)
+        /usr/local/go/src/testing/testing.go:1439 +0x102
+created by testing.(*T).Run
+        /usr/local/go/src/testing/testing.go:1486 +0x35f
+
+goroutine 8 [chan receive]:
+github.com/cloudwego/kitex/pkg/loadbalance/lbcache.(*BalancerFactory).watcher(0xc000264460)
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/loadbalance/lbcache/cache.go:125 +0x9b
+created by github.com/cloudwego/kitex/pkg/loadbalance/lbcache.NewBalancerFactory.func1
+        /home/yclchuxue/go/pkg/mod/github.com/cloudwego/kitex@v0.4.2/pkg/loadbalance/lbcache/cache.go:116 +0x285
+FAIL    ClyMQ/test      30.015s
+
+
+> 测试运行完成时间: 2022/11/13 19:32:25 <
+
