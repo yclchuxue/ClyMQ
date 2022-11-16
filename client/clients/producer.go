@@ -3,6 +3,7 @@ package clients
 import (
 	"ClyMQ/kitex_gen/api"
 	"ClyMQ/kitex_gen/api/server_operations"
+	"ClyMQ/kitex_gen/api/zkserver_operations"
 	"github.com/cloudwego/kitex/client"
 	"context"
 	"errors"
@@ -13,7 +14,7 @@ type Producer struct {
 	mu            	sync.RWMutex
 
 	Name           	string
-	ZkBroker 		server_operations.Client
+	ZkBroker 		zkserver_operations.Client
 	Topic_Partions 	map[string]server_operations.Client //map[topicname+partname]cli 表示该Topic的分片是否是这个producer负责
 }
 
@@ -30,7 +31,7 @@ func NewProducer(zkbroker string, name string) (*Producer, error){
 		Topic_Partions: make(map[string]server_operations.Client),
 	}
 	var err error
-	P.ZkBroker, err = server_operations.NewClient(P.Name, client.WithHostPorts(zkbroker))
+	P.ZkBroker, err = zkserver_operations.NewClient(P.Name, client.WithHostPorts(zkbroker))
 
 	return &P, err
 }
@@ -44,7 +45,7 @@ func (p *Producer) Push(msg Message) error {
 	p.mu.RUnlock()
 
 	if !ok {
-		resp, err := zk.ProGetBroker(context.Background(), &api.ProGetBrokRequset{
+		resp, err := zk.ProGetBroker(context.Background(), &api.ProGetBrokRequest{
 			TopicName: msg.Topic_name,
 			PartName: msg.Part_name,
 		})

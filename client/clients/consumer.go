@@ -4,6 +4,7 @@ import (
 	"ClyMQ/kitex_gen/api"
 	ser "ClyMQ/kitex_gen/api/client_operations"
 	"ClyMQ/kitex_gen/api/server_operations"
+	"ClyMQ/kitex_gen/api/zkserver_operations"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,7 +23,7 @@ type Consumer struct {
 
 	srv 		server.Server
 	port 		string
-	zkBroker  	server_operations.Client
+	zkBroker  	zkserver_operations.Client
 	Brokers 	map[string]*server_operations.Client   //broker_name--client
 	// PTP_Topics 	map[string]
 	// Topic_Partions map[string]Info
@@ -39,7 +40,7 @@ func NewConsumer(zkbroker string, name string, port string) (*Consumer,error) {
 	}
 
 	var err error
-	C.zkBroker, err = server_operations.NewClient(C.Name, client.WithHostPorts(zkbroker))
+	C.zkBroker, err = zkserver_operations.NewClient(C.Name, client.WithHostPorts(zkbroker))
 
 	return &C, err
 }
@@ -81,7 +82,7 @@ func (c *Consumer) SubScription(topic, partition string, option int8) (clis []*s
 	zk := c.zkBroker
 	c.mu.RUnlock()
 
-	resp, err := zk.ConGetBroker(context.Background(), &api.ConGetBrokRequset{
+	resp, err := zk.ConGetBroker(context.Background(), &api.ConGetBrokRequest{
 		TopicName:  topic,
 		PartName: 	partition,
 		Option: 	option,
