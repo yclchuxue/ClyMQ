@@ -34,23 +34,25 @@ func NewTopic(req push) *Topic {
 		rmu:     sync.RWMutex{},
 		Parts:   make(map[string]*Partition),
 		subList: make(map[string]*SubScription),
-		Files: make(map[string]*File),
+		Files:   make(map[string]*File),
 	}
 	str, _ := os.Getwd()
 	str += "/" + name + "/" + req.topic
 	CreateList(str)
-	part, file := NewPartition(req)
-	topic.Files[req.key] = file
-	topic.Parts[req.key] = part
+	if req.key != "" {
+		part, file := NewPartition(req)
+		topic.Files[req.key] = file
+		topic.Parts[req.key] = part
+	}
 
 	return topic
 }
 
-func (t *Topic) GetFile(key string) *File {
+func (t *Topic) GetFile(filename string) *File {
 	t.rmu.RLock()
 	defer t.rmu.RUnlock()
 
-	return t.Parts[key].GetFile()
+	return t.Parts[filename].GetFile()
 }
 
 func (t *Topic) GetConfig(sub string) *Config {
@@ -67,9 +69,15 @@ func (t *Topic) GetParts() map[string]*Partition {
 	return t.Parts
 }
 
+func (t *Topic) AddPartition(req push) {
+	part, _ := NewPartition(req)
+	t.Parts[req.key] = part
+}
+
 func (t *Topic) addMessage(req push) error {
 	part, ok := t.Parts[req.key]
 	if !ok {
+		DEBUG(dError, "not find this part in add message\n")
 		part, file := NewPartition(req) // new a Parition //需要向sub中和config中加入一个partition
 		t.Files[req.key] = file
 		t.Parts[req.key] = part
@@ -169,10 +177,22 @@ func NewPartition(req push) (*Partition, *File) {
 	if err != nil {
 		fmt.Println("create ", str, "failed")
 	}
-	part.addMessage(req)
+
+	// part.addMessage(req)
 
 	return part, part.file
 }
+
+func (p *Partition) SetFd(file_name string) error {
+	file, ok := 
+}
+
+//检查是否存在path的文件，若不存在则错误，存在则创建一个File
+//若path和partition的name相同，有就创建一个File，没有就创建一个这个名字的文件
+func (p *Partition) AddFile(path string) *File {
+
+}
+
 
 func (p *Partition) GetFile() *File {
 	p.mu.RLock()
@@ -225,6 +245,7 @@ type SubScription struct {
 	partitions map[string]*Partition
 	Files      map[string]*File
 
+	//需要修改，一个订阅需要多个config，因为一个partition有多个文件，一个文件需要一个config
 	config *Config
 }
 
@@ -300,7 +321,7 @@ func (s *SubScription) AddConsumerInGroup(req sub) {
 	}
 }
 
-//将config中添加consumer   当consumer StartGet是才调用
+//将config中添加consumer   当consumer StartGet时才调用
 func (s *SubScription) AddConsumerInConfig(req startget, cli *client_operations.Client) {
 
 	s.rmu.Lock()
@@ -372,6 +393,7 @@ func NewConfig(topic_name string, part_num int, partitions map[string]*Partition
 
 	for partition_name := range partitions {
 		con.parts[partition_name] = NewPart(topic_name, partition_name, files[partition_name])
+		con.parts[partition_name].Start()  //开始运行
 	}
 
 	return con

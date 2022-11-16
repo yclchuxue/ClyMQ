@@ -245,6 +245,7 @@ func (p *Part) AddBlock() error {
 	return err
 }
 
+//需要修改，设置未可主动关闭模式，使用管道
 func (p *Part) GetDone() {
 
 	for do := range p.part_had {

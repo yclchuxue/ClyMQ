@@ -11,6 +11,51 @@ type PartKey struct{
 	name string `json:"name"`
 }
 
+//初始化Broker时的信息
+type Options struct {
+	Name 				string
+	Tag 				string
+	Zkserver_Host_Port 	string
+	Broker_Host_Port 	string
+}
+
+//Broker向ZKServer发送自己的新能指标,用于按权值负载均衡
+type Property struct {
+	Name 		string 		`json:"name"`
+	Power		int64		`json:"power"`
+	CPURate		int64		`json:"cpurate"`
+	DiskIO 		int64		`json:"diskio"`
+}
+
+//Broker启动时获得的初始信息，
+type BroNodeInfo struct{
+	Topics 		map[string]TopNodeInfo 	`json:"topics"`
+}
+
+type TopNodeInfo struct{
+	Topic_name 	string
+	Part_nums	int
+	Partitions 	map[string]ParNodeInfo
+}
+
+type ParNodeInfo struct{
+	Part_name 	string
+	Block_nums	int
+	Blocks 		map[string]BloNodeInfo
+}
+
+type BloNodeInfo struct{
+	Start_index 	int64
+	End_index		int64
+	Path 			string
+	File_name		string
+}
+
+const (
+	ZKBROKER  	=	"zkbroker"
+	BROKER 		=	"broker"
+)
+
 func GetIpport() string {
 	interfaces, err := net.Interfaces()
 	ipport := ""
@@ -30,6 +75,11 @@ func CheckFileOrList(path string) (ret bool) {
 		return os.IsExist(err)
 	}
 	return true
+}
+
+
+func MovName(path, new_name string) error {
+
 }
 
 func CreateList(path string) error {

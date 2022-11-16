@@ -1,11 +1,17 @@
 package server
 
 import (
+	"ClyMQ/kitex_gen/api"
 	"ClyMQ/kitex_gen/api/client_operations"
+	"ClyMQ/kitex_gen/api/zkserver_operations"
+	"ClyMQ/zookeeper"
+	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"sync"
 
+	"github.com/cloudwego/kitex/client"
 	client2 "github.com/cloudwego/kitex/client"
 )
 
@@ -18,14 +24,12 @@ const (
 )
 
 type Server struct {
-	topics map[string]*Topic
-	// groups map[string]Group
-
-	consumers map[string]*Client
-
-	// sublist map[string]*SubScription
-
-	mu sync.RWMutex
+	Name  		string
+	topics 		map[string]*Topic
+	consumers 	map[string]*Client
+	zk 			zookeeper.ZK
+	zkclient 	zkserver_operations.Client
+	mu 			sync.RWMutex
 }
 
 type Key struct {
@@ -72,10 +76,10 @@ type sub struct{
 	option int8
 }
 
-type retsub struct{
-	size int
-	parts []PartKey
-}
+// type retsub struct{
+// 	size int
+// 	parts []PartKey
+// }
 
 type startget struct{
 	cli_name  	string
@@ -85,23 +89,102 @@ type startget struct{
 	option 		int8
 }
 
-func NewServer() *Server {
+func NewServer(zkinfo zookeeper.ZkInfo) *Server {
 	return &Server{
-		// topics: make(map[string]*Topic),
-		// consumers: make(map[string]*Client),
+		zk: *zookeeper.NewZK(zkinfo),  //连接上zookeeper
 		mu:sync.RWMutex{},
 	}
 }
 
-func (s *Server) make() {
+func (s *Server) make(opt Options) {
 
 	s.consumers = make(map[string]*Client)
 	s.topics = make(map[string]*Topic)
-
 	name = GetIpport()
-	
 	s.CheckList()
+	s.Name = opt.Name
+
+	//连接zkServer，并将自己的Info发送到zkServer,
+	zkclient, err := zkserver_operations.NewClient(opt.Name, client.WithHostPorts(opt.Zkserver_Host_Port))
+	if err != nil {
+		DEBUG(dError, err.Error())
+	}
+	s.zkclient = zkclient
+
+	resp, err := zkclient.BroInfo(context.Background(), &api.BroInfoRequest{
+		BrokerName: opt.Name,
+		BrokerHostPort: opt.Broker_Host_Port,
+	})
+	if err != nil || !resp.Ret {
+		DEBUG(dError, err.Error())
+	}
+	s.IntiBroker()
 }
+
+//获取该Broker需要负责的Topic和Partition,并在本地创建对应配置
+func (s *Server)IntiBroker(){	
+	s.mu.Lock()
+	info := Property{
+		Name: s.Name,
+		Power: 1,
+		//获取Broker性能指标
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		DEBUG(dError, err.Error())
+	}
+
+	resp, err := s.zkclient.BroGetConfig(context.Background(), &api.BroGetConfigRequest{
+		Propertyinfo: data,
+	})
+
+	if err != nil || !resp.Ret {
+		DEBUG(dError, err.Error())
+	}
+	BroInfo := BroNodeInfo{
+		Topics: make(map[string]TopNodeInfo),
+	}
+	json.Unmarshal(resp.Brokerinfo, &BroInfo)
+
+	s.HandleTopics(BroInfo.Topics)
+	
+	s.mu.Unlock()
+}
+
+func (s *Server)HandleTopics(Topics map[string]TopNodeInfo){
+
+	for topic_name, topic := range Topics {
+		_, ok := s.topics[topic_name]
+		if !ok {
+			
+			s.HandleParttitions(topic_name, topic.Partitions)
+		}else{
+			DEBUG(dWarn, "This topic(%v) had in s.topics\n", topic_name)
+		}
+	}
+}
+
+func (s *Server)HandleParttitions(topic_name string, Partitions map[string]ParNodeInfo){
+	for part_name, partition := range Partitions {
+		_, ok := s.topics[topic_name].Parts[part_name]
+		if !ok {
+
+			s.topics[topic_name] = NewTopic(push{
+				topic: topic_name,
+				key: part_name,
+			})
+
+			s.HandleBlocks(topic_name, part_name, partition.Blocks)
+		}else{
+			DEBUG(dWarn, "This topic(%v) part(%v) had in s.topics\n", topic_name, part_name)
+		}
+	}
+}
+
+func (s *Server)HandleBlocks(topic_name, part_name string, Blocks map[string]BloNodeInfo) {
+	
+}
+
 
 func (s *Server)CheckList(){
 	str, _ := os.Getwd()
@@ -200,22 +283,22 @@ func (s *Server)CheckConsumer(client *Client){
 }
 
 // subscribe 订阅
-func (s *Server) SubHandle(req sub) (resp retsub, err error){
+func (s *Server) SubHandle(req sub) (err error){
 	s.mu.Lock()
 	DEBUG(dLog, "get sub information\n")
 	top, ok := s.topics[req.topic]
 	if !ok {
-		return resp, errors.New("this topic not in this broker")
+		return errors.New("this topic not in this broker")
 	}
 	sub, err := top.AddSubScription(req)
 	if err != nil{
 		s.consumers[req.consumer].AddSubScription(sub)
 	}
-	resp.parts = GetPartKeyArray(s.topics[req.topic].GetParts())
-	resp.size = len(resp.parts)
+	// resp.parts = GetPartKeyArray(s.topics[req.topic].GetParts())
+	// resp.size = len(resp.parts)
 	s.mu.Unlock()
 
-	return resp, nil
+	return nil
 }
 
 func (s *Server)UnSubHandle(req sub) error {
@@ -246,9 +329,9 @@ func (s *Server) PushHandle(req push) error {
 		s.mu.Lock()
 		s.topics[req.topic] = topic
 		s.mu.Unlock()
-	}else{
-		topic.addMessage(req)
 	}
+	topic.addMessage(req)
+	
 	return nil
 }
 

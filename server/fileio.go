@@ -22,6 +22,11 @@ func NewFile(name string) *File {
 	}
 }
 
+//修改文件名
+func (f *File)Update(file_name string) {
+
+} 
+
 func (f *File) OpenFile() *os.File {
 	f.mu.RLock()
 	file, _ := CreateFile(f.filename)
