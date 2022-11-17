@@ -113,25 +113,6 @@ func (s *RPCServer) ConInfo(ctx context.Context, req *api.InfoRequest) (resp *ap
 	return &api.InfoResponse{Ret: false}, err
 }
 
-//订阅
-func (s *RPCServer) Sub(ctx context.Context, req *api.SubRequest) (resp *api.SubResponse, err error) {
-
-	err = s.server.SubHandle(sub{
-		consumer: req.Consumer,
-		topic:    req.Topic,
-		key:      req.Key,
-		option:   req.Option,
-	})
-
-	if err == nil {
-		return &api.SubResponse{
-			Ret: true,
-		}, nil
-	}
-
-	return &api.SubResponse{Ret: false}, err
-}
-
 func (s *RPCServer) StarttoGet(ctx context.Context, req *api.InfoGetRequest) (resp *api.InfoGetResponse, err error) {
 	err = s.server.StartGet(startget{
 		cli_name:   req.CliName,
@@ -147,18 +128,167 @@ func (s *RPCServer) StarttoGet(ctx context.Context, req *api.InfoGetRequest) (re
 	return &api.InfoGetResponse{Ret: false}, err
 }
 
+//producer 获取该向那个broker发送信息
 func (s *RPCServer) ProGetBroker(ctx context.Context, req *api.ProGetBrokRequest) (r *api.ProGetBrokResponse, err error) {
+	info := s.zkserver.ProGetBroker(Info_in{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
+	})
 
+	if info.Err != nil {
+		return &api.ProGetBrokResponse{
+			Ret: false,
+		}, info.Err
+	}
+
+	return  &api.ProGetBrokResponse{
+		Ret: true,
+		BrokerHostPort: info.bro_host_port,
+	}, nil
 }
 
-func (s *RPCServer) ConGetBroker(ctx context.Context, req *api.ConGetBrokRequest) (r *api.ConGetBrokResponse, err error) {
+//先在zookeeper上创建一个Topic，当生产该信息时，或消费信息时再有zkserver发送信息到broker
+//让broker创建
+func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest) (r *api.CreateTopicResponse, err error){
+	info := s.zkserver.CreateTopic(Info_in{
+		topic_name: req.TopicName,
+	})
 
+	if info.Err != nil {
+		return &api.CreateTopicResponse{
+			Ret: false,
+			Err: info.Err.Error(),
+		}, info.Err
+	}
+
+	return &api.CreateTopicResponse{
+		Ret: true,
+		Err: "ok",
+	}, nil
 }
 
+//先在zookeeper上创建一个Partition，当生产该信息时，或消费信息时再有zkserver发送信息到broker
+//让broker创建
+func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) (r *api.CreatePartResponse, err error){
+	info := s.zkserver.CreateTopic(Info_in{
+		topic_name: req.TopicName,
+		part_name: req.PartName,
+	})
+
+	if info.Err != nil {
+		return &api.CreatePartResponse{
+			Ret: false,
+			Err: info.Err.Error(),
+		}, info.Err
+	}
+
+	return &api.CreatePartResponse{
+		Ret: true,
+		Err: "ok",
+	}, nil
+}
+
+func (s *RPCServer) ConStartGetBroker(ctx context.Context, req *api.ConStartGetBrokRequest) (r *api.ConStartGetBrokResponse, err error) {
+	parts, size, err := s.zkserver.HandStartGetBroker(Info_in{
+		cli_name: req.CliName,
+		topic_name: req.TopicName,
+		part_name: req.PartName,
+		option: req.Option,
+		index: req.Index,
+	})
+	if err != nil {
+		return &api.ConStartGetBrokResponse{
+			Ret: false,
+		}, err
+	}
+	return &api.ConStartGetBrokResponse{
+		Ret: true,
+		Size: int64(size),
+		Parts: parts,
+	}, nil
+}
+
+//broker连接到zkserver后会立即发送info，让zkserver连接到broker
 func (s *RPCServer)	BroInfo(ctx context.Context, req *api.BroInfoRequest) (r *api.BroInfoResponse, err error) {
-	
+	err = s.zkserver.HandleBroInfo(req.BrokerName, req.BrokerHostPort)
+	if err != nil {
+		DEBUG(dError, err.Error())
+		return &api.BroInfoResponse{
+			Ret: false,
+		}, err
+	}
+	return &api.BroInfoResponse{
+		Ret: true,
+	}, nil
 }
 
 func (s *RPCServer) BroGetConfig(ctx context.Context, req *api.BroGetConfigRequest) (r *api.BroGetConfigResponse, err error) {
-	
+	/*
+	用于broker加载缓存
+	......
+	暂时不开启这个功能，有待考虑它的必要性
+	*/
+
+	return &api.BroGetConfigResponse{
+		Ret: true,
+	}, nil
+}
+
+//订阅
+func (s *RPCServer) Sub(ctx context.Context, req *api.SubRequest) (resp *api.SubResponse, err error) {
+
+	err = s.zkserver.SubHandle(sub{
+		consumer: req.Consumer,
+		topic:    req.Topic,
+		key:      req.Key,
+		option:   req.Option,
+	})
+
+	if err == nil {
+		return &api.SubResponse{
+			Ret: true,
+		}, nil
+	}
+
+	return &api.SubResponse{Ret: false}, err
+}
+
+func (s *RPCServer) PrepareAccept(ctx context.Context, req *api.PrepareAcceptRequest) (r *api.PrepareAcceptResponse, err error){
+	ret, err := s.server.PrepareAcceptHandle(info{
+		topic_name: req.TopicName,
+		part_name: req.PartName,
+		file_name: req.FileName,
+	})
+	if err != nil {
+		return &api.PrepareAcceptResponse{
+			Ret: false,
+			Err: ret,
+		}, err
+	}
+
+	return &api.PrepareAcceptResponse{
+		Ret: true,
+		Err: ret,
+	}, nil
+}
+
+func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest) (r *api.PrepareSendResponse, err error){
+	ret, err := s.server.PrepareSendHandle(info{
+		topic_name: req.TopicName,
+		part_name: req.PartName,
+		file_name: req.FileName,
+		option: req.Option,
+		offset: req.Offset,
+	})
+	if err != nil {
+		return &api.PrepareSendResponse{
+			Ret: false,
+			Err: ret,
+		}, err
+	}
+
+	return &api.PrepareSendResponse{
+		Ret: true,
+		Err: ret,
+	}, nil
 }
