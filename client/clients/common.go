@@ -2,16 +2,18 @@ package clients
 
 import "net"
 
-type PartKey struct{
-	name string `json:"name"`
+type PartKey struct {
+	Name        string `json:"name"`
+	Broker_name string `json:"brokername"`
+	Broker_H_P  string `json:"brokerhp"`
 }
 
 type BrokerInfo struct {
-	Name 		string `json:"name"`
-	Host_port 	string `json:"hsotport"`
+	Name      string `json:"name"`
+	Host_port string `json:"hsotport"`
 }
 
-func GetIpport() string{
+func GetIpport() string {
 	interfaces, err := net.Interfaces()
 	ipport := ""
 	if err != nil {

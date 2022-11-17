@@ -7,7 +7,6 @@ import (
 	"ClyMQ/kitex_gen/api/zkserver_operations"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -17,25 +16,25 @@ import (
 )
 
 type Consumer struct {
-	mu 			sync.RWMutex
-	Name 		string
-	State 		string
+	mu    sync.RWMutex
+	Name  string
+	State string
 
-	srv 		server.Server
-	port 		string
-	zkBroker  	zkserver_operations.Client
-	Brokers 	map[string]*server_operations.Client   //broker_name--client
+	srv      server.Server
+	port     string
+	zkBroker zkserver_operations.Client
+	Brokers  map[string]server_operations.Client //broker_name--client
 	// PTP_Topics 	map[string]
 	// Topic_Partions map[string]Info
 }
 
-func NewConsumer(zkbroker string, name string, port string) (*Consumer,error) {
+func NewConsumer(zkbroker string, name string, port string) (*Consumer, error) {
 	C := Consumer{
-		mu:			sync.RWMutex{},
-		Name: 		name,
-		State: 		"alive",
-		port: 		port,	
-		Brokers: 	make(map[string]*server_operations.Client),
+		mu:      sync.RWMutex{},
+		Name:    name,
+		State:   "alive",
+		port:    port,
+		Brokers: make(map[string]server_operations.Client),
 		// Topic_Partions: make(map[string]Info),
 	}
 
@@ -45,15 +44,14 @@ func NewConsumer(zkbroker string, name string, port string) (*Consumer,error) {
 	return &C, err
 }
 
-func (c *Consumer)Alive() string {
+func (c *Consumer) Alive() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	return c.State
 }
 
-
-func (c *Consumer)Start_server() {
+func (c *Consumer) Start_server() {
 	addr, _ := net.ResolveTCPAddr("tcp", c.port)
 	var opts []server.Option
 	opts = append(opts, server.WithServiceAddr(addr))
@@ -66,60 +64,14 @@ func (c *Consumer)Start_server() {
 	}
 }
 
-func (c *Consumer)ShutDown_server(){
+func (c *Consumer) ShutDown_server() {
 	c.srv.Stop()
 }
 
-func (c *Consumer) Down(){
+func (c *Consumer) Down() {
 	c.mu.Lock()
 	c.State = "down"
 	c.mu.Unlock()
-}
-
-func (c *Consumer) SubScription(topic, partition string, option int8) (clis []*server_operations.Client, err error) {
-	//查询Zookeeper，找到broker
-	c.mu.RLock()
-	zk := c.zkBroker
-	c.mu.RUnlock()
-
-	resp, err := zk.ConGetBroker(context.Background(), &api.ConGetBrokRequest{
-		TopicName:  topic,
-		PartName: 	partition,
-		Option: 	option,
-	})
-	if err != nil || !resp.Ret {
-		return nil, err
-	}
-
-	broks := make([]BrokerInfo, resp.Size)
-	json.Unmarshal(resp.Broks, &broks)
-
-	parts := make([]PartKey, resp.Size)  	//not used
-	json.Unmarshal(resp.Parts, &parts)		//not used
-
-	//发送Sub请求
-	for _, brok := range broks {
-		cli, err := server_operations.NewClient(c.Name, client.WithHostPorts(brok.Host_port))
-		if err != nil || !resp.Ret {
-			return clis, err
-		}
-		clis = append(clis, &cli)
-		c.Brokers[brok.Name] = &cli
-
-		c.SendInfo(c.port, &cli)
-
-		resp, err := cli.Sub(context.Background(), &api.SubRequest{
-			Consumer: 	c.Name,
-			Topic: 		topic,
-			Key: 		partition,
-			Option: 	option,
-		})
-		if err != nil || !resp.Ret {
-			return clis, err
-		}
-	}
-
-	return clis, nil
 }
 
 func (c *Consumer) SendInfo(port string, cli *server_operations.Client) error {
@@ -133,26 +85,82 @@ func (c *Consumer) SendInfo(port string, cli *server_operations.Client) error {
 	return err
 }
 
-func (c *Consumer) StartGet(info Info) (err error) {
-	ret := ""
-	req := api.InfoGetRequest{
-		CliName:   c.Name,
-		TopicName: info.Topic,
-		PartName:  info.Part,
-		Offset:    info.Offset,
-		Option:    info.Option,
-	}
-	
-	resp, err := info.Cli.StarttoGet(context.Background(), &req)
+func (c *Consumer) SubScription(topic, partition string, option int8) (err error) {
+	//向zkserver订阅topic或partition，
+	c.mu.RLock()
+	zk := c.zkBroker
+	c.mu.RUnlock()
+
+	resp, err := zk.Sub(context.Background(), &api.SubRequest{
+		Consumer: c.Name,
+		Topic:    topic,
+		Key:      partition,
+		Option:   option,
+	})
+
 	if err != nil || !resp.Ret {
-		ret += info.Topic + info.Part + ": err != nil or resp.Ret == false\n"
+		return err
+	}
+	return nil
+}
+
+func (c *Consumer) StartGet(info Info) (err error) {
+
+	resp, err := c.zkBroker.ConStartGetBroker(context.Background(), &api.ConStartGetBrokRequest{
+		CliName: c.Name,
+		TopicName: info.Topic,
+		PartName: info.Part,
+		Option: info.Option,
+		Index: info.Offset,
+	})
+
+	if err != nil || !resp.Ret {
+		return err
 	}
 
-	if ret == "" {
-		return nil
-	} else {
-		return errors.New(ret)
+	// broks := make([]BrokerInfo, resp.Size)
+	// json.Unmarshal(resp.Broks, &broks)
+
+	parts := make([]PartKey, resp.Size)  	//not used
+	json.Unmarshal(resp.Parts, &parts)		//not used
+
+	
+	return c.StartGetToBroker(parts, info)
+
+}
+
+func (c *Consumer)StartGetToBroker(parts []PartKey, info Info) error {
+	
+	//连接上各个broker，并发送start请求
+	
+	for _, part := range parts {
+
+		rep := &api.InfoGetRequest{
+			CliName: c.Name,
+			TopicName: info.Topic,
+			PartName: part.Name,
+			Option: info.Option,
+			Offset: info.Offset,
+		}
+		
+		bro_cli, ok := c.Brokers[part.Broker_name]
+		if !ok { 
+			bro_cli, err := server_operations.NewClient(c.Name, client.WithHostPorts(part.Broker_H_P))
+			if err != nil {
+				return err
+			}
+			if info.Option == 1 { //ptp
+				c.Brokers[part.Broker_name] = bro_cli
+
+				bro_cli.StarttoGet(context.Background(), rep)
+			}
+		}
+
+		if info.Option == 3 { //psb
+			bro_cli.StarttoGet(context.Background(), rep)
+		}	
 	}
+	return nil
 }
 
 type Info struct {
@@ -161,7 +169,7 @@ type Info struct {
 	Part   string
 	Option int8
 	Cli    server_operations.Client
-	Bufs map[int64]*api.PubRequest
+	Bufs   map[int64]*api.PubRequest
 }
 
 func NewInfo(offset int64, topic, part string) Info {
@@ -185,6 +193,6 @@ func (c *Consumer) Pub(ctx context.Context, req *api.PubRequest) (resp *api.PubR
 
 func (c *Consumer) Pingpong(ctx context.Context, req *api.PingPongRequest) (resp *api.PingPongResponse, err error) {
 	fmt.Println("PingPong")
-	
+
 	return &api.PingPongResponse{Pong: true}, nil
 }
