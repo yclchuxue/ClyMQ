@@ -3,7 +3,6 @@ package server
 import (
 	"ClyMQ/kitex_gen/api/client_operations"
 	"errors"
-	"fmt"
 	"hash/crc32"
 	"os"
 	"sort"
@@ -24,28 +23,50 @@ const (
 
 type Topic struct {
 	rmu     sync.RWMutex
+	Name 	string
 	Files   map[string]*File
 	Parts   map[string]*Partition
 	subList map[string]*SubScription
 }
 
-func NewTopic(req push) *Topic {
+func NewTopic(topic_name string) *Topic {
 	topic := &Topic{
 		rmu:     sync.RWMutex{},
+		Name: 	 topic_name,
 		Parts:   make(map[string]*Partition),
 		subList: make(map[string]*SubScription),
 		Files:   make(map[string]*File),
 	}
 	str, _ := os.Getwd()
-	str += "/" + name + "/" + req.topic
-	CreateList(str)
-	if req.key != "" {
-		part, file := NewPartition(req)
-		topic.Files[req.key] = file
-		topic.Parts[req.key] = part
-	}
+	str += "/" + name + "/" + topic_name
+	CreateList(str)   //若存在，则不会创建
 
 	return topic
+}
+
+func (t *Topic) PrepareAcceptHandle(in info) (ret string, err error){
+	t.rmu.Lock()
+	partition, ok := t.Parts[in.part_name]
+	if !ok {
+		partition = NewPartition(t.Name, in.part_name)
+		t.Parts[in.part_name] = partition
+	}
+	t.rmu.Unlock()
+	
+}
+
+func (t *Topic) HandleParttitions(Partitions map[string]ParNodeInfo) {
+	for part_name, _ := range Partitions {
+		_, ok := t.Parts[part_name]
+		if !ok {
+			part := NewPartition(t.Name, part_name)
+			// part.HandleBlocks(topic_name, part_name, partition.Blocks)
+
+			t.Parts[part_name] = part
+		}else{
+			DEBUG(dWarn, "This topic(%v) part(%v) had in s.topics\n", t.Name, part_name)
+		}
+	}
 }
 
 func (t *Topic) GetFile(filename string) *File {
@@ -69,17 +90,17 @@ func (t *Topic) GetParts() map[string]*Partition {
 	return t.Parts
 }
 
-func (t *Topic) AddPartition(req push) {
-	part, _ := NewPartition(req)
-	t.Parts[req.key] = part
+func (t *Topic) AddPartition(part_name string) {
+	part := NewPartition(t.Name, part_name)
+	t.Parts[part_name] = part
 }
 
 func (t *Topic) addMessage(req push) error {
 	part, ok := t.Parts[req.key]
 	if !ok {
 		DEBUG(dError, "not find this part in add message\n")
-		part, file := NewPartition(req) // new a Parition //需要向sub中和config中加入一个partition
-		t.Files[req.key] = file
+		part := NewPartition(req.key) // new a Parition //需要向sub中和config中加入一个partition
+		// t.Files[req.key] = file
 		t.Parts[req.key] = part
 	}
 	DEBUG(dLog, "add before lock in topic addmsg\n")
@@ -148,43 +169,57 @@ func (t *Topic) Rebalance() {
 
 }
 
-type Partition struct {
-	mu        sync.RWMutex
-	file_name string
-	fd        *os.File
-	key       string
-	file      *File
+const (
+	START = "start"
+	CLOSE = "close"
+)
 
+type Partition struct {
+	mu        	sync.RWMutex
+	key       	string
+
+	state 		string
+
+	file_name 	string
+	file      	*File
+	fd        	*os.File
 	index       int64
 	start_index int64
 	queue       []Message
 }
 
-func NewPartition(req push) (*Partition, *File) {
+func NewPartition(topic_name, part_name string) (*Partition) {
 	part := &Partition{
 		mu:    sync.RWMutex{},
-		key:   req.key,
-		queue: make([]Message, 50),
+		state: START,
+		key:   part_name,
+		// queue: make([]Message, 50),
 	}
+	
 	str, _ := os.Getwd()
-	str += "/" + name + "/" + req.topic + "/" + req.key + ".txt"
-	file, err := CreateFile(str)
-	part.file = NewFile(str)
-	part.fd = file
-	part.file_name = str
-	part.index = part.file.GetIndex(file)
-	part.start_index = part.index + 1
-	if err != nil {
-		fmt.Println("create ", str, "failed")
-	}
+	str += "/" + name + "/" + topic_name + "/" + part_name
+	CreateList(str)  //若存在，则不会创建
+	// part.file = NewFile(str)
+	// part.fd = file
+	// part.file_name = str
+	// part.index = part.file.GetIndex(file)
+	// part.start_index = part.index + 1
+	// if err != nil {
+	// 	fmt.Println("create ", str, "failed")
+	// }
 
 	// part.addMessage(req)
 
-	return part, part.file
+	return part
 }
 
-func (p *Partition) SetFd(file_name string) error {
-	file, ok := 
+func (p *Partition) StartGetMessage(file_name string) error {
+	p.queue = make([]Message, 50)	
+
+	// str, _ := os.Getwd()
+	// str += "/" + name + "/" + req.topic + "/" + req.key + ".txt"
+	// file, err := CreateFile(str)
+
 }
 
 //检查是否存在path的文件，若不存在则错误，存在则创建一个File

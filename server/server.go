@@ -59,6 +59,18 @@ type push struct {
 	message  string
 }
 
+type info struct{
+	name		string  //broker name
+	topic_name 	string
+	part_name	string
+	file_name	string
+	option 		int8
+	offset 		int64
+
+	producer 	string
+	consumer 	string
+}
+
 type pull struct {
 	consumer string
 	topic    string
@@ -118,7 +130,7 @@ func (s *Server) make(opt Options) {
 	if err != nil || !resp.Ret {
 		DEBUG(dError, err.Error())
 	}
-	s.IntiBroker()
+	// s.IntiBroker() 根据zookeeper上的历史信息，加载缓存信息
 }
 
 //获取该Broker需要负责的Topic和Partition,并在本地创建对应配置
@@ -156,35 +168,15 @@ func (s *Server)HandleTopics(Topics map[string]TopNodeInfo){
 	for topic_name, topic := range Topics {
 		_, ok := s.topics[topic_name]
 		if !ok {
-			
-			s.HandleParttitions(topic_name, topic.Partitions)
+			top := NewTopic(topic_name)
+			top.HandleParttitions(topic.Partitions)
+
+			s.topics[topic_name] = top
 		}else{
 			DEBUG(dWarn, "This topic(%v) had in s.topics\n", topic_name)
 		}
 	}
 }
-
-func (s *Server)HandleParttitions(topic_name string, Partitions map[string]ParNodeInfo){
-	for part_name, partition := range Partitions {
-		_, ok := s.topics[topic_name].Parts[part_name]
-		if !ok {
-
-			s.topics[topic_name] = NewTopic(push{
-				topic: topic_name,
-				key: part_name,
-			})
-
-			s.HandleBlocks(topic_name, part_name, partition.Blocks)
-		}else{
-			DEBUG(dWarn, "This topic(%v) part(%v) had in s.topics\n", topic_name, part_name)
-		}
-	}
-}
-
-func (s *Server)HandleBlocks(topic_name, part_name string, Blocks map[string]BloNodeInfo) {
-	
-}
-
 
 func (s *Server)CheckList(){
 	str, _ := os.Getwd()
@@ -194,6 +186,21 @@ func (s *Server)CheckList(){
 	if !ret {
 		CreateList(str)
 	}
+}
+
+func (s *Server) PrepareAcceptHandle(in info) (ret string, err error) {
+	s.mu.Lock()
+	topic, ok := s.topics[in.topic_name]
+	if !ok {
+		topic = NewTopic(in.topic_name)
+		s.topics[in.topic_name] = topic
+	}
+	s.mu.Unlock()
+	return topic.PrepareAcceptHandle(in)
+}
+
+func (s *Server) PrepareSendHandle(in info) (ret string, err error) {
+
 }
 
 func (s *Server) InfoHandle(ipport string) error {
@@ -325,7 +332,7 @@ func (s *Server) PushHandle(req push) error {
 	// DEBUG(dLog, "after topic\n")
 	if !ok {
 		DEBUG(dLog, "New a Topic name is %v\n", req.topic)
-		topic = NewTopic(req)
+		topic = NewTopic(req.topic)
 		s.mu.Lock()
 		s.topics[req.topic] = topic
 		s.mu.Unlock()
