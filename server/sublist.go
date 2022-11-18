@@ -51,8 +51,20 @@ func (t *Topic) PrepareAcceptHandle(in info) (ret string, err error){
 		partition = NewPartition(t.Name, in.part_name)
 		t.Parts[in.part_name] = partition
 	}
-	t.rmu.Unlock()
 	
+	//设置partition中的file和fd，start_index等信息
+	str, _ := os.Getwd()
+	str += "/" + name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
+	file, fd := NewFile(str)
+	t.Files[str] = file
+	t.rmu.Unlock()
+	ret = partition.StartGetMessage(file, fd, in)
+	if ret == OK {
+		DEBUG(dLog, "topic(%v)_partition(%v) Start success\n", in.topic_name, in.part_name)
+	}else{
+		DEBUG(dLog, "topic(%v)_partition(%v) Had Started\n", in.topic_name, in.part_name)
+	}
+	return ret, nil
 }
 
 func (t *Topic) HandleParttitions(Partitions map[string]ParNodeInfo) {
@@ -99,7 +111,7 @@ func (t *Topic) addMessage(req push) error {
 	part, ok := t.Parts[req.key]
 	if !ok {
 		DEBUG(dError, "not find this part in add message\n")
-		part := NewPartition(req.key) // new a Parition //需要向sub中和config中加入一个partition
+		part := NewPartition(req.topic, req.key) // new a Parition //需要向sub中和config中加入一个partition
 		// t.Files[req.key] = file
 		t.Parts[req.key] = part
 	}
@@ -177,7 +189,6 @@ const (
 type Partition struct {
 	mu        	sync.RWMutex
 	key       	string
-
 	state 		string
 
 	file_name 	string
@@ -191,7 +202,7 @@ type Partition struct {
 func NewPartition(topic_name, part_name string) (*Partition) {
 	part := &Partition{
 		mu:    sync.RWMutex{},
-		state: START,
+		state: CLOSE,
 		key:   part_name,
 		// queue: make([]Message, 50),
 	}
@@ -199,34 +210,36 @@ func NewPartition(topic_name, part_name string) (*Partition) {
 	str, _ := os.Getwd()
 	str += "/" + name + "/" + topic_name + "/" + part_name
 	CreateList(str)  //若存在，则不会创建
-	// part.file = NewFile(str)
-	// part.fd = file
-	// part.file_name = str
-	// part.index = part.file.GetIndex(file)
-	// part.start_index = part.index + 1
-	// if err != nil {
-	// 	fmt.Println("create ", str, "failed")
-	// }
-
-	// part.addMessage(req)
 
 	return part
 }
 
-func (p *Partition) StartGetMessage(file_name string) error {
-	p.queue = make([]Message, 50)	
+func (p *Partition) StartGetMessage(file *File, fd *os.File, in info) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ret := ""
+	switch p.state {
+	case START:
+		ret = ErrHadStart
+	case CLOSE:
+		p.queue = make([]Message, 50)	
 
-	// str, _ := os.Getwd()
-	// str += "/" + name + "/" + req.topic + "/" + req.key + ".txt"
-	// file, err := CreateFile(str)
-
+		p.state = START
+		p.file = file
+		p.fd = fd
+		p.file_name = in.file_name
+		p.index = file.GetIndex(fd)
+		p.start_index = p.index+1
+		ret = OK
+	}
+	return ret
 }
 
 //检查是否存在path的文件，若不存在则错误，存在则创建一个File
 //若path和partition的name相同，有就创建一个File，没有就创建一个这个名字的文件
-func (p *Partition) AddFile(path string) *File {
+// func (p *Partition) AddFile(path string) *File {
 
-}
+// }
 
 
 func (p *Partition) GetFile() *File {
@@ -236,6 +249,8 @@ func (p *Partition) GetFile() *File {
 	return p.file
 }
 
+//检查state
+//当接收数据达到一定数量将修改zookeeper上的index
 func (p *Partition) addMessage(req push) {
 	p.mu.Lock()
 	p.index++
@@ -281,6 +296,7 @@ type SubScription struct {
 	Files      map[string]*File
 
 	//需要修改，一个订阅需要多个config，因为一个partition有多个文件，一个文件需要一个config
+	//需要修改，分为多种订阅，每种订阅方式一种config
 	config *Config
 }
 

@@ -14,12 +14,22 @@ type File struct{
 	node_size	int
 }
 
-func NewFile(name string) *File {
-	return &File{
+//先检查该磁盘是否存在该文件，如不存在则需要创建
+func NewFile(path_name string) (file *File, fd *os.File) {
+	var err error
+	if !CheckFileOrList(path_name) {
+		fd, err = CreateFile(path_name)
+		if err != nil {
+			DEBUG(dError, err.Error())
+		}
+	}
+
+	file = &File{
 		mu: sync.RWMutex{},
 		filename: name,
 		node_size: NODE_SIZE,
 	}
+	return file, fd
 }
 
 //修改文件名
