@@ -88,6 +88,14 @@ struct PrepareAcceptResponse{
     2:  string  err
 }
 
+struct CloseAcceptRequest{
+    1:  
+}
+
+struct CloseAcceptResponse{
+
+}
+
 struct PrepareSendRequest{
     1:  string  topic_name
     2:  string  part_name
@@ -108,8 +116,9 @@ service Server_Operations {
     InfoGetResponse StarttoGet(1: InfoGetRequest req)   //consumer used
 
     //zkserver used this rpc to request broker server
-    PrepareAcceptResponse PrepareAccept(1: PrepareAcceptRequest req)
-    PrepareSendResponse PrepareSend(1: PrepareSendRequest req)
+    PrepareAcceptResponse   PrepareAccept(1: PrepareAcceptRequest req)
+    CloseAcceptResponse     CloseAccept(1: CloseAcceptRequest req)
+    PrepareSendResponse     PrepareSend(1: PrepareSendRequest req)
 }
 
 //broker server 将信息发送到zkserver， zkserver连接上broker server
