@@ -206,7 +206,19 @@ func (z *ZK)GetPartNowBrokerNode(topic_name, part_name string) (BrokerNode, Bloc
 	return Broker, NowBlock
 }
 
-// func (z *ZK)
+func (z *ZK)GetBlockSize(topic_name, part_name string) (int, error){
+	path := z.TopicRoot + "/" + topic_name + "/partitions/" + part_name
+	ok, _, err := z.conn.Exists(path)
+	if !ok {
+		return 0, err
+	}
+
+	parts,_,err := z.conn.Children(path)
+	if err != nil {
+		return 0, err
+	}
+	return len(parts), nil
+}
 
 func (z *ZK)GetBrokerNode(name string) (BrokerNode) {
 	path := z.BrokerRoot + "/" + name
