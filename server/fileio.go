@@ -22,6 +22,11 @@ func NewFile(path_name string) (file *File, fd *os.File) {
 		if err != nil {
 			DEBUG(dError, err.Error())
 		}
+	}else{
+		fd, err = os.OpenFile(path_name, os.O_APPEND|os.O_RDWR, os.ModeAppend|os.ModePerm)
+		if err != nil {
+			DEBUG(dError, err.Error())
+		}
 	}
 
 	file = &File{

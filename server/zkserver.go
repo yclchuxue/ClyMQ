@@ -146,7 +146,7 @@ func (z *ZkServer)CreateNowBlock(info Info_in) error {
 	return z.zk.RegisterNode(brock_node)
 }
 
-func (z *ZkServer)SubHandle(req sub) error {
+func (z *ZkServer)SubHandle(info Info_in) error {
 	//在zookeeper上创建sub节点，若节点已经存在，则加入group中
 
 	return nil

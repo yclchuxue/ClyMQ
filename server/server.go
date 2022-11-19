@@ -52,40 +52,22 @@ type Msg struct {
 	msg 	 []byte
 }
 
-type push struct {
-	producer string
-	topic    string
-	key      string
-	message  string
-}
-
 type info struct{
 	name		string  //broker name
 	topic_name 	string
 	part_name	string
 	file_name	string
+	new_name 	string
 	option 		int8
 	offset 		int64
 
 	producer 	string
 	consumer 	string
-}
-
-type pull struct {
-	consumer string
-	topic    string
-	key      string
+	message 	string
 }
 
 type retpull struct{
 	message string
-}
-
-type sub struct{
-	consumer string
-	topic string
-	key   string
-	option int8
 }
 
 // type retsub struct{
@@ -133,6 +115,7 @@ func (s *Server) make(opt Options) {
 	// s.IntiBroker() 根据zookeeper上的历史信息，加载缓存信息
 }
 
+//not used
 //获取该Broker需要负责的Topic和Partition,并在本地创建对应配置
 func (s *Server)IntiBroker(){	
 	s.mu.Lock()
@@ -163,6 +146,7 @@ func (s *Server)IntiBroker(){
 	s.mu.Unlock()
 }
 
+//not used
 func (s *Server)HandleTopics(Topics map[string]TopNodeInfo){
 
 	for topic_name, topic := range Topics {
@@ -208,15 +192,26 @@ func (s *Server) PrepareAcceptHandle(in info) (ret string, err error) {
 	return topic.PrepareAcceptHandle(in)
 }
 
+func (s *Server) CloseAcceptHandle(in info){
+
+}
+
 //准备发送信息，
 //检查topic和subscription是否存在，不存在则需要创建
 //检查该文件的config是否存在，不存在则创建，并开启协程
 //协程设置超时时间，时间到则关闭
 func (s *Server) PrepareSendHandle(in info) (ret string, err error) {
-
+	//检查或创建topic
+	s.mu.Lock()
+	topic, ok := s.topics[in.topic_name]
+	if !ok {
+		topic = NewTopic(in.topic_name)
+		s.topics[in.topic_name] = topic
+	}
+	s.mu.Unlock()
+	//检查或创建partition
+	return topic.PrepareSendHandle(in)
 }
-
-// func (s *Server) 
 
 func (s *Server) InfoHandle(ipport string) error {
 
@@ -242,7 +237,7 @@ func (s *Server) InfoHandle(ipport string) error {
 	return err
 }
 
-func (s *Server)StartGet(start startget) (err error) {
+func (s *Server)StartGet(in info) (err error) {
 	/*
 	新开启一个consumer关于一个topic和partition的协程来消费该partition的信息；
 
@@ -253,38 +248,26 @@ func (s *Server)StartGet(start startget) (err error) {
 	PSB：不需要负载均衡
 	*/
 	err = nil
-	switch start.option{
+	switch in.option{
 	case TOPIC_NIL_PTP:
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-
-		sub_name := GetStringfromSub(start.topic_name, start.part_name, start.option)
-		ret := s.consumers[start.cli_name].CheckSubscription(sub_name)
-		sub := s.consumers[start.cli_name].GetSub(sub_name)
-		if ret {  //该订阅存在
-
-			//添加到Config后会进行负载均衡，生成新的配置，然后执行新的配置
-			sub.AddConsumerInConfig(start, s.consumers[start.cli_name].GetCli())
-			
-		}else{    //该订阅不存在
-			err = errors.New("this subscription is not exist")
-		}
+		//已经由zkserver检查过是否订阅
+		sub_name := GetStringfromSub(in.topic_name, in.part_name, in.option)
+		//添加到Config后会进行负载均衡，生成新的配置，然后执行新的配置
+		return s.topics[in.topic_name].HandleStartToGet(sub_name, in, s.consumers[in.consumer].GetCli())
 
 	case TOPIC_KEY_PSB:
 		s.mu.RLock()
 		defer s.mu.RUnlock()
 
-		sub_name := GetStringfromSub(start.topic_name, start.part_name, start.option)
-		ret := s.consumers[start.cli_name].CheckSubscription(sub_name)
-		
-		if ret {  //该订阅存在
-			// clis := make(map[string]*client_operations.Client)
-			// clis[start.cli_name] = s.consumers[start.cli_name].GetCli()
-			// file := s.topics[start.topic_name].GetFile(start.part_name)
-			// go s.consumers[start.cli_name].StartPart(start, clis, file)
-		}else{    //该订阅不存在
-			err = errors.New("this subscription is not exist")
-		}
+		sub_name := GetStringfromSub(in.topic_name, in.part_name, in.option)
+		// clis := make(map[string]*client_operations.Client)
+		// clis[start.cli_name] = s.consumers[start.cli_name].GetCli()
+		// file := s.topics[start.topic_name].GetFile(start.part_name)
+		// go s.consumers[start.cli_name].StartPart(start, clis, file)
+		DEBUG(dLog, "consumer(%v) start to get topic(%v) partition(%v) offset(%v) in sub(%v)\n", in.consumer, in.topic_name, in.part_name, in.offset, sub_name)
+
 	default:
 		err = errors.New("the option is not PTP or PSB")
 	}
@@ -305,16 +288,16 @@ func (s *Server)CheckConsumer(client *Client){
 }
 
 // subscribe 订阅
-func (s *Server) SubHandle(req sub) (err error){
+func (s *Server) SubHandle(in info) (err error){
 	s.mu.Lock()
 	DEBUG(dLog, "get sub information\n")
-	top, ok := s.topics[req.topic]
+	top, ok := s.topics[in.topic_name]
 	if !ok {
 		return errors.New("this topic not in this broker")
 	}
-	sub, err := top.AddSubScription(req)
+	sub, err := top.AddSubScription(in)
 	if err != nil{
-		s.consumers[req.consumer].AddSubScription(sub)
+		s.consumers[in.consumer].AddSubScription(sub)
 	}
 	// resp.parts = GetPartKeyArray(s.topics[req.topic].GetParts())
 	// resp.size = len(resp.parts)
@@ -323,17 +306,17 @@ func (s *Server) SubHandle(req sub) (err error){
 	return nil
 }
 
-func (s *Server)UnSubHandle(req sub) error {
+func (s *Server)UnSubHandle(in info) error {
 
 	s.mu.Lock()
 	DEBUG(dLog, "get unsub information\n")
-	top, ok := s.topics[req.topic]
+	top, ok := s.topics[in.topic_name]
 	if !ok {
 		return errors.New("this topic not in this broker")
 	}
-	sub_name, err := top.ReduceSubScription(req)
+	sub_name, err := top.ReduceSubScription(in)
 	if err != nil {
-		s.consumers[req.consumer].ReduceSubScription(sub_name)
+		s.consumers[in.consumer].ReduceSubScription(sub_name)
 	}
 
 	s.mu.Unlock()
@@ -341,23 +324,23 @@ func (s *Server)UnSubHandle(req sub) error {
 }
 
 
-func (s *Server) PushHandle(req push) error {
+func (s *Server) PushHandle(in info) error {
 	DEBUG(dLog, "get Message form producer\n")
-	topic, ok := s.topics[req.topic]
+	topic, ok := s.topics[in.topic_name]
 	// DEBUG(dLog, "after topic\n")
 	if !ok {
-		DEBUG(dLog, "New a Topic name is %v\n", req.topic)
-		topic = NewTopic(req.topic)
+		DEBUG(dLog, "New a Topic name is %v\n", in.topic_name)
+		topic = NewTopic(in.topic_name)
 		s.mu.Lock()
-		s.topics[req.topic] = topic
+		s.topics[in.topic_name] = topic
 		s.mu.Unlock()
 	}
-	topic.addMessage(req)
+	topic.addMessage(in)
 	
 	return nil
 }
 
-func (s *Server) PullHandle(req pull) ( retpull, error) {
+func (s *Server) PullHandle(in info) ( retpull, error) {
 
 	return retpull{}, nil
 }

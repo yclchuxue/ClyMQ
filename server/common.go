@@ -103,15 +103,15 @@ func CreateFile(path string) (file *os.File, err error) {
 	return file, err
 }
 
-func GetClisArray(clis map[string]*client_operations.Client) []string {
-	var array []string
+// func GetClisArray(clis map[string]*client_operations.Client) []string {
+// 	var array []string
 
-	for cli_name := range clis {
-		array = append(array, cli_name)
-	}
+// 	for cli_name := range clis {
+// 		array = append(array, cli_name)
+// 	}
 
-	return array
-}
+// 	return array
+// }
 
 func GetPartKeyArray(parts map[string]*Partition) []PartKey {
 	var array []PartKey
