@@ -45,14 +45,6 @@ struct InfoGetResponse {
     1: bool  ret
 }
 
-//struct AddTopicRequest {
-//
-//}
-//
-//struct AddTopicResponse{
-//
-//}
-
 //设置某个partition接受信息的文件和队列
 struct StartGetMessageRequest {
     1:  string topic_name
@@ -89,11 +81,16 @@ struct PrepareAcceptResponse{
 }
 
 struct CloseAcceptRequest{
-    1:  
+    1:  string  topic_name
+    2:  string  part_name
+    3:  string  oldfilename
+    4:  string  newfilename
 }
 
 struct CloseAcceptResponse{
-
+    1:  bool    ret
+    2:  i64     startindex
+    3:  i64     endindex
 }
 
 struct PrepareSendRequest{
@@ -200,12 +197,16 @@ struct SubResponse {
 }
 
 service ZkServer_Operations {
+    //producer和consumer
     SubResponse  Sub(1:  SubRequest  req)               //consumer used
     CreateTopicResponse CreateTopic(1: CreateTopicRequest req)
     CreatePartResponse  CreatePart(1: CreatePartRequest req)
-    BroInfoResponse BroInfo(1: BroInfoRequest req)
     ProGetBrokResponse ProGetBroker(1:  ProGetBrokRequest req)
     ConStartGetBrokResponse ConStartGetBroker(1:  ConStartGetBrokRequest req)
+
+    //broker
+    BroInfoResponse BroInfo(1: BroInfoRequest req)  //broker 发送info让zkserver连接broker
+    //broker更新topic-partition的offset
 
     //broker 用于恢复缓存的，暂时不使用
     BroGetConfigResponse BroGetConfig(1:    BroGetConfigRequest req)
