@@ -20,53 +20,54 @@ var (
 )
 
 const (
-	NODE_SIZE  =  42
+	NODE_SIZE = 42
 )
 
 type Server struct {
-	Name  		string
-	topics 		map[string]*Topic
-	consumers 	map[string]*Client
-	zk 			zookeeper.ZK
-	zkclient 	zkserver_operations.Client
-	mu 			sync.RWMutex
+	Name        string
+	topics      map[string]*Topic
+	consumers   map[string]*Client
+	parts_rafts *parts_raft
+	zk          zookeeper.ZK
+	zkclient    zkserver_operations.Client
+	mu          sync.RWMutex
 }
 
 type Key struct {
-	Start_index int64	`json:"start_index"`
-	End_index 	int64	`json:"end_index"`
-	Size  		int 	`json:"size"`
+	Start_index int64 `json:"start_index"`
+	End_index   int64 `json:"end_index"`
+	Size        int   `json:"size"`
 }
 
 type Message struct {
-	Index 		int64 		`json:"index"`
-	Topic_name 	string		`json:"topic_name"`
-	Part_name 	string		`json:"part_name"`
-	Msg 		[]byte		`json:"msg"`
+	Index      int64  `json:"index"`
+	Topic_name string `json:"topic_name"`
+	Part_name  string `json:"part_name"`
+	Msg        []byte `json:"msg"`
 }
 
 type Msg struct {
 	producer string
 	topic    string
 	key      string
-	msg 	 []byte
+	msg      []byte
 }
 
-type info struct{
-	name		string  //broker name
-	topic_name 	string
-	part_name	string
-	file_name	string
-	new_name 	string
-	option 		int8
-	offset 		int64
+type info struct {
+	name       string //broker name
+	topic_name string
+	part_name  string
+	file_name  string
+	new_name   string
+	option     int8
+	offset     int64
 
-	producer 	string
-	consumer 	string
-	message 	string
+	producer string
+	consumer string
+	message  string
 }
 
-type retpull struct{
+type retpull struct {
 	message string
 }
 
@@ -75,18 +76,18 @@ type retpull struct{
 // 	parts []PartKey
 // }
 
-type startget struct{
-	cli_name  	string
-    topic_name	string
-    part_name	string
-    index		int64
-	option 		int8
+type startget struct {
+	cli_name   string
+	topic_name string
+	part_name  string
+	index      int64
+	option     int8
 }
 
 func NewServer(zkinfo zookeeper.ZkInfo) *Server {
 	return &Server{
-		zk: *zookeeper.NewZK(zkinfo),  //连接上zookeeper
-		mu:sync.RWMutex{},
+		zk: *zookeeper.NewZK(zkinfo), //连接上zookeeper
+		mu: sync.RWMutex{},
 	}
 }
 
@@ -98,6 +99,10 @@ func (s *Server) make(opt Options) {
 	s.CheckList()
 	s.Name = opt.Name
 
+	//本地创建parts——raft，为raft同步做准备
+	s.parts_rafts = NewParts_Raft()
+	go s.parts_rafts.make(opt.Name, opt.Raft_Host_Port)
+
 	//连接zkServer，并将自己的Info发送到zkServer,
 	zkclient, err := zkserver_operations.NewClient(opt.Name, client.WithHostPorts(opt.Zkserver_Host_Port))
 	if err != nil {
@@ -106,7 +111,7 @@ func (s *Server) make(opt Options) {
 	s.zkclient = zkclient
 
 	resp, err := zkclient.BroInfo(context.Background(), &api.BroInfoRequest{
-		BrokerName: opt.Name,
+		BrokerName:     opt.Name,
 		BrokerHostPort: opt.Broker_Host_Port,
 	})
 	if err != nil || !resp.Ret {
@@ -117,10 +122,10 @@ func (s *Server) make(opt Options) {
 
 //not used
 //获取该Broker需要负责的Topic和Partition,并在本地创建对应配置
-func (s *Server)IntiBroker(){	
+func (s *Server) IntiBroker() {
 	s.mu.Lock()
 	info := Property{
-		Name: s.Name,
+		Name:  s.Name,
 		Power: 1,
 		//获取Broker性能指标
 	}
@@ -142,12 +147,12 @@ func (s *Server)IntiBroker(){
 	json.Unmarshal(resp.Brokerinfo, &BroInfo)
 
 	s.HandleTopics(BroInfo.Topics)
-	
+
 	s.mu.Unlock()
 }
 
 //not used
-func (s *Server)HandleTopics(Topics map[string]TopNodeInfo){
+func (s *Server) HandleTopics(Topics map[string]TopNodeInfo) {
 
 	for topic_name, topic := range Topics {
 		_, ok := s.topics[topic_name]
@@ -156,13 +161,13 @@ func (s *Server)HandleTopics(Topics map[string]TopNodeInfo){
 			top.HandleParttitions(topic.Partitions)
 
 			s.topics[topic_name] = top
-		}else{
+		} else {
 			DEBUG(dWarn, "This topic(%v) had in s.topics\n", topic_name)
 		}
 	}
 }
 
-func (s *Server)CheckList(){
+func (s *Server) CheckList() {
 	str, _ := os.Getwd()
 	str += "/" + name
 	ret := CheckFileOrList(str)
@@ -172,7 +177,7 @@ func (s *Server)CheckList(){
 	}
 }
 
-const(
+const (
 	ErrHadStart = "this partition had Start"
 )
 
@@ -192,7 +197,7 @@ func (s *Server) PrepareAcceptHandle(in info) (ret string, err error) {
 	return topic.PrepareAcceptHandle(in)
 }
 
-func (s *Server) CloseAcceptHandle(in info){
+func (s *Server) CloseAcceptHandle(in info) {
 
 }
 
@@ -231,24 +236,24 @@ func (s *Server) InfoHandle(ipport string) error {
 		DEBUG(dLog, "return resp to consumer\n")
 		return nil
 	}
-	
+
 	DEBUG(dError, "Connect client failed")
 
 	return err
 }
 
-func (s *Server)StartGet(in info) (err error) {
+func (s *Server) StartGet(in info) (err error) {
 	/*
-	新开启一个consumer关于一个topic和partition的协程来消费该partition的信息；
+		新开启一个consumer关于一个topic和partition的协程来消费该partition的信息；
 
-	查询是否有该订阅的信息；
+		查询是否有该订阅的信息；
 
-	PTP：需要负载均衡
+		PTP：需要负载均衡
 
-	PSB：不需要负载均衡
+		PSB：不需要负载均衡
 	*/
 	err = nil
-	switch in.option{
+	switch in.option {
 	case TOPIC_NIL_PTP:
 		s.mu.RLock()
 		defer s.mu.RUnlock()
@@ -275,12 +280,11 @@ func (s *Server)StartGet(in info) (err error) {
 	return err
 }
 
-
-func (s *Server)CheckConsumer(client *Client){
+func (s *Server) CheckConsumer(client *Client) {
 	shutdown := client.CheckConsumer()
 	if shutdown { //该consumer已关闭，平衡subscription
 		client.mu.Lock()
-		for _, subscription := range client.subList{
+		for _, subscription := range client.subList {
 			subscription.ShutdownConsumerInGroup(client.name)
 		}
 		client.mu.Unlock()
@@ -288,7 +292,7 @@ func (s *Server)CheckConsumer(client *Client){
 }
 
 // subscribe 订阅
-func (s *Server) SubHandle(in info) (err error){
+func (s *Server) SubHandle(in info) (err error) {
 	s.mu.Lock()
 	DEBUG(dLog, "get sub information\n")
 	top, ok := s.topics[in.topic_name]
@@ -296,7 +300,7 @@ func (s *Server) SubHandle(in info) (err error){
 		return errors.New("this topic not in this broker")
 	}
 	sub, err := top.AddSubScription(in)
-	if err != nil{
+	if err != nil {
 		s.consumers[in.consumer].AddSubScription(sub)
 	}
 	// resp.parts = GetPartKeyArray(s.topics[req.topic].GetParts())
@@ -306,7 +310,7 @@ func (s *Server) SubHandle(in info) (err error){
 	return nil
 }
 
-func (s *Server)UnSubHandle(in info) error {
+func (s *Server) UnSubHandle(in info) error {
 
 	s.mu.Lock()
 	DEBUG(dLog, "get unsub information\n")
@@ -323,7 +327,6 @@ func (s *Server)UnSubHandle(in info) error {
 	return nil
 }
 
-
 func (s *Server) PushHandle(in info) error {
 	DEBUG(dLog, "get Message form producer\n")
 	topic, ok := s.topics[in.topic_name]
@@ -336,11 +339,11 @@ func (s *Server) PushHandle(in info) error {
 		s.mu.Unlock()
 	}
 	topic.addMessage(in)
-	
+
 	return nil
 }
 
-func (s *Server) PullHandle(in info) ( retpull, error) {
+func (s *Server) PullHandle(in info) (retpull, error) {
 
 	return retpull{}, nil
 }

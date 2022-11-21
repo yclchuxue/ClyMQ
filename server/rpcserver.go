@@ -43,7 +43,7 @@ func (s *RPCServer) Start(opts_cli, opts_bro []server.Option, opt Options) error
 
 		srv_bro := zkserver_operations.NewServer(s, opts_bro...)
 		s.srv_bro = srv_bro
-		DEBUG(dLog, "Broker start rpcserver for brokers\n")
+		DEBUG(dLog, "ZkServer start rpcserver for brokers\n")
 		go func() {
 			err := srv_bro.Run()
 
