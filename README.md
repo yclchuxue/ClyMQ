@@ -1,6 +1,13 @@
 ### 使用说明
 #### server
 ```
+kitex -module ClyMQ -service ClyMQ operations.thrift
+
+kitex -module ClyMQ -service ClyMQ raftoperations.thrift
+```
+执行上述命令，生成kitex RPC
+
+```
 sh build.sh
 ```
 执行上述命令后应该有一个output目录，其中包括编译产品。
