@@ -16,7 +16,7 @@ import (
 //另一个是Broker获取Zookeeper信息和调度各个Broker的调度者
 type RPCServer struct {
 	// me int64
-	name 			string
+	// name 			string
 	srv_cli      	server.Server
 	srv_bro 	 	server.Server
 	zkinfo			zookeeper.ZkInfo
@@ -31,7 +31,7 @@ func NewRpcServer(zkinfo zookeeper.ZkInfo) RPCServer {
 	}
 }
 
-func (s *RPCServer) Start(opts_cli, opts_bro []server.Option, opt Options) error {
+func (s *RPCServer) Start(opts_cli, opts_zks []server.Option, opt Options) error {
 
 	switch opt.Tag {
 	case BROKER :
@@ -41,7 +41,7 @@ func (s *RPCServer) Start(opts_cli, opts_bro []server.Option, opt Options) error
 		s.zkserver = NewZKServer(s.zkinfo)
 		s.zkserver.make(opt)
 
-		srv_bro := zkserver_operations.NewServer(s, opts_bro...)
+		srv_bro := zkserver_operations.NewServer(s, opts_zks...)
 		s.srv_bro = srv_bro
 		DEBUG(dLog, "ZkServer start rpcserver for brokers\n")
 		go func() {
@@ -92,15 +92,30 @@ func (s *RPCServer) Pull(ctx context.Context, req *api.PullRequest) (resp *api.P
 
 	ret, err := s.server.PullHandle(info{
 		consumer: req.Consumer,
-		topic_name:    req.Topic,
-		part_name:      req.Key,
+		topic_name:    	req.Topic,
+		part_name:     	req.Key,
+		size: 			req.Size,	
 	})
-
 	if err == nil {
-		return &api.PullResponse{Message: ret.message}, nil
+		DEBUG(dError, err.Error())
+		return &api.PullResponse{
+			Ret: false,
+		}, nil
 	}
 
-	return &api.PullResponse{Message: "111"}, nil
+	if err == nil {
+		DEBUG(dError, err.Error())
+		return &api.PullResponse{
+			Ret: false,
+		}, nil
+	}
+
+	return &api.PullResponse{
+		Msgs: ret.array,
+		StartIndex: ret.start_index,
+		EndIndex: ret.end_index,
+		Size: 	ret.size,
+	}, nil
 }
 
 //consumer---->broker server
@@ -261,6 +276,7 @@ func (s *RPCServer) Sub(ctx context.Context, req *api.SubRequest) (resp *api.Sub
 }
 
 //zkserver---->broker server
+//通知broker准备接收生产者信息
 func (s *RPCServer) PrepareAccept(ctx context.Context, req *api.PrepareAcceptRequest) (r *api.PrepareAcceptResponse, err error){
 	ret, err := s.server.PrepareAcceptHandle(info{
 		topic_name: req.TopicName,
@@ -285,10 +301,18 @@ func (s *RPCServer) PrepareAccept(ctx context.Context, req *api.PrepareAcceptReq
 //并修改文件名，关闭partition中的fd等
 func (s *RPCServer) CloseAccept(ctx context.Context, req *api.CloseAcceptRequest) (r *api.CloseAcceptResponse, err error){
 	
+	/*
+	待完成
+	*/
+
+	return &api.CloseAcceptResponse{
+		Ret: true,
+	}, nil
 }
 
 
 //zkserver---->broker server
+//通知broker准备向consumer发送信息
 func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest) (r *api.PrepareSendResponse, err error){
 	ret, err := s.server.PrepareSendHandle(info{
 		topic_name: req.TopicName,

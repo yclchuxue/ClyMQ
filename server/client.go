@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	ALIVE = "alive"
-	DOWN  = "down"
-	TIMEOUT = 60*10   //10分钟
+	ALIVE     = "alive"
+	DOWN      = "down"
+	TIMEOUT   = 60 * 10 //10分钟
 	UPDATANUM = 10
 )
 
@@ -122,7 +122,7 @@ type Part struct {
 }
 
 const (
-	OK      = "ok"
+	OK    = "ok"
 	TIOUT = "timeout"
 
 	NOTDO  = "notdo"
@@ -147,7 +147,7 @@ func NewPart(in info, file *File) *Part {
 		mu:         sync.RWMutex{},
 		topic_name: in.topic_name,
 		part_name:  in.part_name,
-		option:     TOPIC_NIL_PTP,
+		option:     in.option,
 
 		buffer_node: make(map[int64]Key),
 		buffer_msg:  make(map[int64][]Message),
@@ -164,7 +164,7 @@ func NewPart(in info, file *File) *Part {
 	return part
 }
 
-func (p *Part) Start(close chan Part) {
+func (p *Part) Start(close chan *Part) {
 
 	// open file
 	p.fd = *p.file.OpenFile()
@@ -200,7 +200,6 @@ func (p *Part) Start(close chan Part) {
 	p.mu.Unlock()
 
 }
-
 
 func (p *Part) UpdateClis(cli_names []string, Clis map[string]*client_operations.Client) {
 	p.mu.Lock()
@@ -242,9 +241,9 @@ func (p *Part) AddBlock() error {
 }
 
 //需要修改，设置未可主动关闭模式，使用管道
-func (p *Part) GetDone(close chan Part) {
+func (p *Part) GetDone(close chan *Part) {
 
-	num := 0   //计数，如果达到UPDATANUM则更新zookeeper中的offset
+	num := 0 //计数，如果达到UPDATANUM则更新zookeeper中的offset
 	for {
 		select {
 		case do := <-p.part_had:
@@ -263,13 +262,13 @@ func (p *Part) GetDone(close chan Part) {
 				}
 
 				//文件消费完成，且文件不是生产者正在写入的文件
-				if p.file.filename != p.part_name + "NowBlock.txt" && err == errors.New("read All file, do not find this index"){
+				if p.file.filename != p.part_name+"NowBlock.txt" && err == errors.New("read All file, do not find this index") {
 					p.state = DOWN
 				}
 				//且缓存中的文件页被消费完后，发送信息到config，关闭该Part；
 				if p.state == DOWN && len(p.buf_done) == 0 {
 					p.mu.Unlock()
-					close <- *p
+					close <- p
 					return
 				}
 
@@ -301,8 +300,8 @@ func (p *Part) GetDone(close chan Part) {
 				p.mu.Unlock()
 			}
 
-		case <- time.After(TIMEOUT * time.Second):  //超时
-			close <- *p
+		case <-time.After(TIMEOUT * time.Second): //超时
+			close <- p
 			return
 		}
 
@@ -398,6 +397,10 @@ func (p *Part) Pub(cli *client_operations.Client, node Key, data []byte) error {
 		return err
 	}
 
+	/*
+	修改zookeeper的该PTP的offset
+	*/
+
 	return nil
 }
 
@@ -461,4 +464,73 @@ func (g *Group) DeleteClient(cli_name string) {
 		delete(g.consumers, cli_name)
 	}
 	g.rmu.Unlock()
+}
+
+type Node struct {
+	topic_name string
+	part_name  string
+	option     int8
+	file       *File
+	// cli        *client_operations.Client
+	fd         os.File
+
+	// index  int64 //use index to find offset
+	offset int64
+
+	start_index int64
+	// end_index   int64
+}
+
+type MSGS struct {
+	start_index int64
+	end_index   int64
+	size        int8
+	array       []byte //由[]Message转byte
+}
+
+func NewNode(in info, file *File) *Node {
+
+	no := &Node{
+		topic_name: in.topic_name,
+		part_name:  in.part_name,
+		option:     in.option,
+
+		file: file,
+	}
+
+	no.fd = *no.file.OpenFile()
+	no.offset = -1
+
+	return no
+}
+
+func (no *Node) ReadMSGS(in info) (MSGS, error) {
+	var err error
+	var msgs MSGS
+	if no.offset == -1 || no.start_index != in.offset {
+		no.offset, err = no.file.FindOffset(&no.fd, in.offset)
+		if err != nil {
+			DEBUG(dError, err.Error())
+			return MSGS{}, err
+		}
+	}
+	nums := 0
+	for nums < int(in.size) {
+		node, msg, err := no.file.ReadByte(&no.fd, no.offset)
+		if err != nil {
+			DEBUG(dError, err.Error())
+			return MSGS{}, err
+		}
+		if nums == 0{
+			msgs.start_index = node.Start_index
+			msgs.end_index   = node.End_index
+		}
+		nums += node.Size
+		no.offset += int64(NODE_SIZE) + int64(node.Size)
+		msgs.size = int8(nums)
+		msgs.array = append(msgs.array, msg...)
+		msgs.end_index = node.End_index
+	}
+
+	return msgs, nil
 }
