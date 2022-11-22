@@ -12,15 +12,20 @@ struct PushResponse {
     2: string   err   //用来回复该partition已经不在这个broker接收
 }
 
-//暂时不使用该功能
 struct PullRequest {
     1: string consumer
     2: string topic
     3: string key
+    4: i64    offset
+    5: i8     size
 }
 
 struct PullResponse {
-    1: string message
+    1: binary   Msgs
+    2: bool     Ret
+    3: i64      Start_index
+    4: i64      End_index
+    5: i8       Size
 }
 
 //consmer发送自己的host和ip,使broker连接上自己
