@@ -14,7 +14,7 @@ import (
 const (
 	ALIVE     = "alive"
 	DOWN      = "down"
-	TIMEOUT   = 60 * 10 //10分钟
+	TOUT   = 60 * 10 //10分钟
 	UPDATANUM = 10
 )
 
@@ -300,7 +300,7 @@ func (p *Part) GetDone(close chan *Part) {
 				p.mu.Unlock()
 			}
 
-		case <-time.After(TIMEOUT * time.Second): //超时
+		case <-time.After(TOUT * time.Second): //超时
 			close <- p
 			return
 		}

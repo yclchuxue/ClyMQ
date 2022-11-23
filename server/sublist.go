@@ -325,9 +325,13 @@ func (p *Partition) addMessage(in info) {
 		Msg:        []byte(in.message),
 	}
 	DEBUG(dLog, "part_name %v add message index is %v\n", p.key, p.index)
-	p.queue = append(p.queue, msg)
 
-	if p.index-p.start_index >= 10 {
+	//判断需要的ack，
+	
+	p.queue = append(p.queue, msg)  //加入队列
+
+	//达到一定大小后写入磁盘
+	if p.index-p.start_index >= VERTUAL_10 {
 		var msg []Message
 		for i := 0; i < VERTUAL_10; i++ {
 			msg = append(msg, p.queue[i])
