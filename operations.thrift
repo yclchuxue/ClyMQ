@@ -5,6 +5,7 @@ struct PushRequest {
     2: string topic
     3: string key
     4: string message
+    5: i64    index
 }
 
 struct PushResponse {
@@ -121,6 +122,11 @@ service Server_Operations {
     PrepareAcceptResponse   PrepareAccept(1: PrepareAcceptRequest req)
     CloseAcceptResponse     CloseAccept(1: CloseAcceptRequest req)
     PrepareSendResponse     PrepareSend(1: PrepareSendRequest req)
+
+    //AddRaftPartition
+    //CloseRaftPartition
+    //AddFetchPartition
+    //CloseFetchPartition
 }
 
 //broker server 将信息发送到zkserver， zkserver连接上broker server
@@ -201,17 +207,41 @@ struct SubResponse {
     1: bool ret
 }
 
+struct UpdateOffsetRequest{
+    1: string   topic
+    2: string   part
+    3: i64      offset
+}
+
+struct UpdateOffsetResponse{
+    1: bool     ret
+}
+
+struct SetPartitionStateRequest{
+    1: string   topic
+    2: string   partition
+    3: i8       option
+    4: i8       dupnum
+}
+
+struct SetPartitionStateResponse{
+    1: bool     ret
+    2: string   err
+}
+
 service ZkServer_Operations {
     //producer和consumer
     SubResponse  Sub(1:  SubRequest  req)               //consumer used
     CreateTopicResponse CreateTopic(1: CreateTopicRequest req)
     CreatePartResponse  CreatePart(1: CreatePartRequest req)
+    SetPartitionStateResponse SetPartitionState(1: SetPartitionStateRequest req)
     ProGetBrokResponse ProGetBroker(1:  ProGetBrokRequest req)
     ConStartGetBrokResponse ConStartGetBroker(1:  ConStartGetBrokRequest req)
 
     //broker
     BroInfoResponse BroInfo(1: BroInfoRequest req)  //broker 发送info让zkserver连接broker
     //broker更新topic-partition的offset
+    UpdateOffsetResponse UpdateOffset(1: UpdateOffsetRequest req)
 
     //broker 用于恢复缓存的，暂时不使用
     BroGetConfigResponse BroGetConfig(1:    BroGetConfigRequest req)
