@@ -75,17 +75,21 @@ func (s *RPCServer) ShutDown_server() {
 //producer--->broker server
 func (s *RPCServer) Push(ctx context.Context, req *api.PushRequest) (resp *api.PushResponse, err error) {
 
-	err = s.server.PushHandle(info{
+	ret, err := s.server.PushHandle(info{
 		producer: req.Producer,
 		topic_name:    req.Topic,
 		part_name:      req.Key,
 		message:  req.Message,
 	})
-	if err == nil {
-		return &api.PushResponse{Ret: true}, nil
+
+	if err != nil {
+		DEBUG(dError, err.Error())
 	}
 
-	return &api.PushResponse{Ret: false}, err
+	return &api.PushResponse{
+		Ret: true,
+		Err: ret,
+	}, nil
 }
 
 func (s *RPCServer) Pull(ctx context.Context, req *api.PullRequest) (resp *api.PullResponse, err error) {
@@ -165,8 +169,7 @@ func (s *RPCServer) ProGetBroker(ctx context.Context, req *api.ProGetBrokRequest
 	}, nil
 }
 
-//先在zookeeper上创建一个Topic，当生产该信息时，或消费信息时再有zkserver发送信息到broker
-//让broker创建
+//先在zookeeper上创建一个Topic，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
 func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest) (r *api.CreateTopicResponse, err error){
 	info := s.zkserver.CreateTopic(Info_in{
 		topic_name: req.TopicName,
@@ -185,8 +188,7 @@ func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest
 	}, nil
 }
 
-//先在zookeeper上创建一个Partition，当生产该信息时，或消费信息时再有zkserver发送信息到broker
-//让broker创建
+//先在zookeeper上创建一个Partition，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
 func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) (r *api.CreatePartResponse, err error){
 	info := s.zkserver.CreateTopic(Info_in{
 		topic_name: req.TopicName,
@@ -201,6 +203,27 @@ func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) 
 	}
 
 	return &api.CreatePartResponse{
+		Ret: true,
+		Err: "ok",
+	}, nil
+}
+
+func (s *RPCServer) SetPartitionState(ctx context.Context, req *api.SetPartitionStateRequest) (r *api.SetPartitionStateResponse, err error){
+	info := s.zkserver.SetPartitionState(Info_in{
+		topic_name: req.Topic,
+		part_name: req.Partition,
+		option: req.Option,
+		dupnum: req.Dupnum,
+	})
+
+	if info.Err != nil {
+		return &api.SetPartitionStateResponse{
+			Ret: false,
+			Err: info.Err.Error(),
+		}, info.Err
+	}
+
+	return &api.SetPartitionStateResponse{
 		Ret: true,
 		Err: "ok",
 	}, nil
@@ -238,6 +261,24 @@ func (s *RPCServer)	BroInfo(ctx context.Context, req *api.BroInfoRequest) (r *ap
 		}, err
 	}
 	return &api.BroInfoResponse{
+		Ret: true,
+	}, nil
+}
+
+//broker---->zkserver
+func (s *RPCServer) UpdateOffset(ctx context.Context, req *api.UpdateOffsetRequest) (r *api.UpdateOffsetResponse, err error) {
+	err = s.zkserver.UpdateOffset(Info_in{
+		topic_name: req.Topic,
+		part_name: req.Part,
+		index: req.Offset,
+	})
+	if err != nil {
+		DEBUG(dError, err.Error())
+		return &api.UpdateOffsetResponse{
+			Ret: false,
+		}, err
+	}
+	return &api.UpdateOffsetResponse{
 		Ret: true,
 	}, nil
 }
