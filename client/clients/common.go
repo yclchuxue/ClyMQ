@@ -6,6 +6,7 @@ type PartKey struct {
 	Name        string `json:"name"`
 	Broker_name string `json:"brokername"`
 	Broker_H_P  string `json:"brokerhp"`
+	Err 		string `json:"err"`
 }
 
 type BrokerInfo struct {
