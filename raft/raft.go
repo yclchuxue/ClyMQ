@@ -238,6 +238,8 @@ func (rf *Raft) RaftSize() (int, int) {
 	rf.mu.Lock()
 	Xsize := rf.X
 	rf.mu.Unlock()
+
+	//修改为log的长度,来决定快照的大小
 	return Xsize, rf.persister.RaftStateSize()
 }
 
