@@ -39,14 +39,14 @@ func NewZK(info ZkInfo) *ZK {
 
 type BrokerNode struct {
 	Name     string `json:"name"`
-	HostPort string `json:"hostport"`
-	Pnum     int    `json:"pnum"`
+	HostPort string `json:"hostPort"`
+	Pnum     int    `json:"pNum"`
 	//一些负载情况
 }
 
 type TopicNode struct {
 	Name string `json:"name"`
-	Pnum int    `json:"pnum"`
+	Pnum int    `json:"pNum"`
 	// Brokers []string `json:"brokers"` //保存该topic的partition现在有那些broker负责，
 	//用于PTP的情况
 }
@@ -54,26 +54,26 @@ type TopicNode struct {
 type PartitionNode struct {
 	Name      string `json:"name"`
 	TopicName string `json:"topicName"`
-	Option    int8   `json:"option"`
-	DupNum    int8
-	PTPoffset int64 `json:"ptpoffset"`
+	Option    int8   `json:"option"`    //partition的状态
+	DupNum    int8   `json:"dupNum"`
+	PTPoffset int64  `json:"ptpOffset"`
 }
 
 type BlockNode struct {
 	Name          string `json:"name"`
 	FileName      string `json:"filename"`
-	TopicName     string `json:"topicname"`
-	PartitionName string `json:"partitionname"`
-	StartOffset   int64  `json:"startoffset"`
-	EndOffset     int64  `json:"endoffset"`
+	TopicName     string `json:"topicName"`
+	PartitionName string `json:"partitionName"`
+	StartOffset   int64  `json:"startOffset"`
+	EndOffset     int64  `json:"endOffset"`
 
-	LeaderBroker string `json:"leaderbroker"`
+	LeaderBroker string `json:"leaderBroker"`
 }
 
 type DuplicateNode struct {
-	StartOffset int64  `json:"startoffset"`
-	EndOffset   int64  `json:"endoffset"`
-	BrokerName  string `json:"brokername"`
+	StartOffset int64  `json:"startOffset"`
+	EndOffset   int64  `json:"endOffset"`
+	BrokerName  string `json:"brokerName"`
 }
 
 func (z *ZK) RegisterNode(znode interface{}) (err error) {
@@ -169,7 +169,7 @@ type Part struct {
 	Host_Port  string
 	PTP_index  int64
 	File_name  string
-	Err 	   string
+	Err        string
 }
 
 //检查broker是否在线
@@ -210,7 +210,7 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 				for _, duplicate := range Duplicates {
 
 					duplicatenode := z.GetDuplicateNode(path + "/" + part + "/" + info.Name + "/" + duplicate)
-					if max_dup.EndOffset == 0  || max_dup.EndOffset <= duplicatenode.EndOffset{
+					if max_dup.EndOffset == 0 || max_dup.EndOffset <= duplicatenode.EndOffset {
 						//保证broker在线
 						if z.CheckBroker(duplicatenode.BrokerName) {
 							max_dup = duplicatenode
@@ -220,7 +220,7 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 				var ret string
 				if max_dup.EndOffset != 0 {
 					ret = "OK"
-				}else{
+				} else {
 					ret = "thr brokers not online"
 				}
 				//一个partition只取endoffset最大的broker,其他小的broker副本不全面
@@ -232,7 +232,7 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 					Host_Port:  broker.HostPort,
 					PTP_index:  PTP_index,
 					File_name:  info.FileName,
-					Err:  ret,
+					Err:        ret,
 				})
 				break
 			}
@@ -262,7 +262,7 @@ func (z *ZK) GetBroker(topic, part string, offset int64) (parts []Part, err erro
 			for _, duplicate := range Duplicates {
 
 				duplicatenode := z.GetDuplicateNode(part_path + "/" + block + "/" + duplicate)
-				if max_dup.EndOffset == 0  || max_dup.EndOffset <= duplicatenode.EndOffset{
+				if max_dup.EndOffset == 0 || max_dup.EndOffset <= duplicatenode.EndOffset {
 					//保证broker在线
 					if z.CheckBroker(duplicatenode.BrokerName) {
 						max_dup = duplicatenode
@@ -272,7 +272,7 @@ func (z *ZK) GetBroker(topic, part string, offset int64) (parts []Part, err erro
 			var ret string
 			if max_dup.EndOffset != 0 {
 				ret = "OK"
-			}else{
+			} else {
 				ret = "thr brokers not online"
 			}
 			//一个partition只取endoffset最大的broker,其他小的broker副本不全面
@@ -283,7 +283,7 @@ func (z *ZK) GetBroker(topic, part string, offset int64) (parts []Part, err erro
 				BrokerName: broker.Name,
 				Host_Port:  broker.HostPort,
 				File_name:  info.FileName,
-				Err: ret,
+				Err:        ret,
 			})
 			break
 		}
@@ -358,6 +358,18 @@ func (z *ZK) GetBlockNode(path string) BlockNode {
 	return blocknode
 }
 
+func (z *ZK) GetDuplicateNodes(topic_name, part_name, block_name string) (nodes []DuplicateNode) {
+	BlockPath := z.TopicRoot + "/" + topic_name + "/Partitions/" + part_name + "/" + block_name
+	Dups, _, _ := z.conn.Children(BlockPath)
+
+	for _, dup_name := range Dups {
+		DupNode := z.GetDuplicateNode(BlockPath + "/" + dup_name)
+		nodes = append(nodes, DupNode)
+	}
+
+	return nodes
+}
+
 func (z *ZK) GetDuplicateNode(path string) DuplicateNode {
 	var dupnode DuplicateNode
 	data, _, _ := z.conn.Get(path)
@@ -366,14 +378,10 @@ func (z *ZK) GetDuplicateNode(path string) DuplicateNode {
 	return dupnode
 }
 
-//consumer 和 producer 获取现在该消费位置和存放位置的Broker
-// func (z *ZK) GetBroker(topic, partition, option string, offset int64) (string, error){
-// 	path := z.TopicRoot + "/" + topic + "/" + partition
+//获取当前partition接收信息的文件的文件名
+//返回需要修改成为的文件名
 
-// 	ok, _, err := z.conn.Exists(path)
-// 	if !ok || err != nil {
-// 		fmt.Println(err.Error())
-// 		return "", err
-// 	}
 
-// }
+//将partition的NowBlock的信息中的文件名修改
+//并创建一个新Block节点，将原来Nowlock节点的内容存到这个节点
+//并将NowBlock中的节点信息更新；
