@@ -6,7 +6,9 @@ import (
 	"ClyMQ/kitex_gen/api/zkserver_operations"
 	"ClyMQ/zookeeper"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/cloudwego/kitex/server"
 )
@@ -17,11 +19,11 @@ import (
 type RPCServer struct {
 	// me int64
 	// name 			string
-	srv_cli      	server.Server
-	srv_bro 	 	server.Server
-	zkinfo			zookeeper.ZkInfo
-	server   		*Server
-	zkserver 		*ZkServer
+	srv_cli  server.Server
+	srv_bro  server.Server
+	zkinfo   zookeeper.ZkInfo
+	server   *Server
+	zkserver *ZkServer
 }
 
 func NewRpcServer(zkinfo zookeeper.ZkInfo) RPCServer {
@@ -34,7 +36,7 @@ func NewRpcServer(zkinfo zookeeper.ZkInfo) RPCServer {
 func (s *RPCServer) Start(opts_cli, opts_zks []server.Option, opt Options) error {
 
 	switch opt.Tag {
-	case BROKER :
+	case BROKER:
 		s.server = NewServer(s.zkinfo)
 		s.server.make(opt)
 	case ZKBROKER:
@@ -76,10 +78,13 @@ func (s *RPCServer) ShutDown_server() {
 func (s *RPCServer) Push(ctx context.Context, req *api.PushRequest) (resp *api.PushResponse, err error) {
 
 	ret, err := s.server.PushHandle(info{
-		producer: req.Producer,
-		topic_name:    req.Topic,
-		part_name:      req.Key,
-		message:  req.Message,
+		producer:   req.Producer,
+		topic_name: req.Topic,
+		part_name:  req.Key,
+		// startIndex: req.StartIndex,
+		// endIndex:   req.EndIndex,
+		message:    req.Message,
+		size:       req.Size,
 	})
 
 	if err != nil {
@@ -93,32 +98,30 @@ func (s *RPCServer) Push(ctx context.Context, req *api.PushRequest) (resp *api.P
 }
 
 func (s *RPCServer) Pull(ctx context.Context, req *api.PullRequest) (resp *api.PullResponse, err error) {
-
+	Err := "ok"
 	ret, err := s.server.PullHandle(info{
-		consumer: req.Consumer,
-		topic_name:    	req.Topic,
-		part_name:     	req.Key,
-		size: 			req.Size,	
+		consumer:   req.Consumer,
+		topic_name: req.Topic,
+		part_name:  req.Key,
+		size:       req.Size,
 	})
-	if err == nil {
-		DEBUG(dError, err.Error())
-		return &api.PullResponse{
-			Ret: false,
-		}, nil
-	}
-
-	if err == nil {
-		DEBUG(dError, err.Error())
-		return &api.PullResponse{
-			Ret: false,
-		}, nil
+	if err != nil {
+		if err == io.EOF && ret.size == 0 {
+			Err = "file EOF"
+		} else {
+			DEBUG(dError, err.Error())
+			return &api.PullResponse{
+				Ret: false,
+			}, nil
+		}
 	}
 
 	return &api.PullResponse{
-		Msgs: ret.array,
+		Msgs:       ret.array,
 		StartIndex: ret.start_index,
-		EndIndex: ret.end_index,
-		Size: 	ret.size,
+		EndIndex:   ret.end_index,
+		Size:       ret.size,
+		Err:        Err,
 	}, nil
 }
 
@@ -140,7 +143,7 @@ func (s *RPCServer) StarttoGet(ctx context.Context, req *api.InfoGetRequest) (re
 		consumer:   req.CliName,
 		topic_name: req.TopicName,
 		part_name:  req.PartName,
-		offset:      req.Offset,
+		offset:     req.Offset,
 	})
 
 	if err == nil {
@@ -163,14 +166,14 @@ func (s *RPCServer) ProGetBroker(ctx context.Context, req *api.ProGetBrokRequest
 		}, info.Err
 	}
 
-	return  &api.ProGetBrokResponse{
-		Ret: true,
+	return &api.ProGetBrokResponse{
+		Ret:            true,
 		BrokerHostPort: info.bro_host_port,
 	}, nil
 }
 
 //先在zookeeper上创建一个Topic，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
-func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest) (r *api.CreateTopicResponse, err error){
+func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest) (r *api.CreateTopicResponse, err error) {
 	info := s.zkserver.CreateTopic(Info_in{
 		topic_name: req.TopicName,
 	})
@@ -189,10 +192,10 @@ func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest
 }
 
 //先在zookeeper上创建一个Partition，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
-func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) (r *api.CreatePartResponse, err error){
+func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) (r *api.CreatePartResponse, err error) {
 	info := s.zkserver.CreateTopic(Info_in{
 		topic_name: req.TopicName,
-		part_name: req.PartName,
+		part_name:  req.PartName,
 	})
 
 	if info.Err != nil {
@@ -208,12 +211,12 @@ func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) 
 	}, nil
 }
 
-func (s *RPCServer) SetPartitionState(ctx context.Context, req *api.SetPartitionStateRequest) (r *api.SetPartitionStateResponse, err error){
+func (s *RPCServer) SetPartitionState(ctx context.Context, req *api.SetPartitionStateRequest) (r *api.SetPartitionStateResponse, err error) {
 	info := s.zkserver.SetPartitionState(Info_in{
 		topic_name: req.Topic,
-		part_name: req.Partition,
-		option: req.Option,
-		dupnum: req.Dupnum,
+		part_name:  req.Partition,
+		option:     req.Option,
+		dupnum:     req.Dupnum,
 	})
 
 	if info.Err != nil {
@@ -232,11 +235,11 @@ func (s *RPCServer) SetPartitionState(ctx context.Context, req *api.SetPartition
 // consumer---->zkserver
 func (s *RPCServer) ConStartGetBroker(ctx context.Context, req *api.ConStartGetBrokRequest) (r *api.ConStartGetBrokResponse, err error) {
 	parts, size, err := s.zkserver.HandStartGetBroker(Info_in{
-		cli_name: req.CliName,
+		cli_name:   req.CliName,
 		topic_name: req.TopicName,
-		part_name: req.PartName,
-		option: req.Option,
-		index: req.Index,
+		part_name:  req.PartName,
+		option:     req.Option,
+		index:      req.Index,
 	})
 	if err != nil {
 		return &api.ConStartGetBrokResponse{
@@ -244,15 +247,15 @@ func (s *RPCServer) ConStartGetBroker(ctx context.Context, req *api.ConStartGetB
 		}, err
 	}
 	return &api.ConStartGetBrokResponse{
-		Ret: true,
-		Size: int64(size),
+		Ret:   true,
+		Size:  int64(size),
 		Parts: parts,
 	}, nil
 }
 
 //broker---->zkserver
 //broker连接到zkserver后会立即发送info，让zkserver连接到broker
-func (s *RPCServer)	BroInfo(ctx context.Context, req *api.BroInfoRequest) (r *api.BroInfoResponse, err error) {
+func (s *RPCServer) BroInfo(ctx context.Context, req *api.BroInfoRequest) (r *api.BroInfoResponse, err error) {
 	err = s.zkserver.HandleBroInfo(req.BrokerName, req.BrokerHostPort)
 	if err != nil {
 		DEBUG(dError, err.Error())
@@ -269,8 +272,8 @@ func (s *RPCServer)	BroInfo(ctx context.Context, req *api.BroInfoRequest) (r *ap
 func (s *RPCServer) UpdateOffset(ctx context.Context, req *api.UpdateOffsetRequest) (r *api.UpdateOffsetResponse, err error) {
 	err = s.zkserver.UpdateOffset(Info_in{
 		topic_name: req.Topic,
-		part_name: req.Part,
-		index: req.Offset,
+		part_name:  req.Part,
+		index:      req.Offset,
 	})
 	if err != nil {
 		DEBUG(dError, err.Error())
@@ -286,9 +289,9 @@ func (s *RPCServer) UpdateOffset(ctx context.Context, req *api.UpdateOffsetReque
 //broker---->zkserver
 func (s *RPCServer) BroGetConfig(ctx context.Context, req *api.BroGetConfigRequest) (r *api.BroGetConfigResponse, err error) {
 	/*
-	用于broker加载缓存
-	......
-	暂时不开启这个功能，有待考虑它的必要性
+		用于broker加载缓存
+		......
+		暂时不开启这个功能，有待考虑它的必要性
 	*/
 
 	return &api.BroGetConfigResponse{
@@ -301,10 +304,10 @@ func (s *RPCServer) BroGetConfig(ctx context.Context, req *api.BroGetConfigReque
 func (s *RPCServer) Sub(ctx context.Context, req *api.SubRequest) (resp *api.SubResponse, err error) {
 
 	err = s.zkserver.SubHandle(Info_in{
-		cli_name: req.Consumer,
-		topic_name:    req.Topic,
-		part_name:      req.Key,
-		option:   req.Option,
+		cli_name:   req.Consumer,
+		topic_name: req.Topic,
+		part_name:  req.Key,
+		option:     req.Option,
 	})
 
 	if err == nil {
@@ -318,11 +321,11 @@ func (s *RPCServer) Sub(ctx context.Context, req *api.SubRequest) (resp *api.Sub
 
 //zkserver---->broker server
 //通知broker准备接收生产者信息
-func (s *RPCServer) PrepareAccept(ctx context.Context, req *api.PrepareAcceptRequest) (r *api.PrepareAcceptResponse, err error){
+func (s *RPCServer) PrepareAccept(ctx context.Context, req *api.PrepareAcceptRequest) (r *api.PrepareAcceptResponse, err error) {
 	ret, err := s.server.PrepareAcceptHandle(info{
 		topic_name: req.TopicName,
-		part_name: req.PartName,
-		file_name: req.FileName,
+		part_name:  req.PartName,
+		file_name:  req.FileName,
 	})
 	if err != nil {
 		return &api.PrepareAcceptResponse{
@@ -338,29 +341,64 @@ func (s *RPCServer) PrepareAccept(ctx context.Context, req *api.PrepareAcceptReq
 }
 
 //zkserver---->broker server
+//zkserver通知broker检查partition的state是否设置，
+//raft集群，或fetch机制是否开启
+func (s *RPCServer) PrepareState(ctx context.Context, req *api.PrepareStateRequest) (r *api.PrepareStateResponse, err error) {
+	brokers := make(map[string]string)
+	json.Unmarshal(req.Brokers, brokers)
+
+	ret, err := s.server.PrepareAcceptHandle(info{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
+		option:     req.State,
+		brokers:    brokers,
+	})
+	if err != nil {
+		return &api.PrepareStateResponse{
+			Ret: false,
+			Err: ret,
+		}, err
+	}
+
+	return &api.PrepareStateResponse{
+		Ret: true,
+		Err: ret,
+	}, nil
+}
+
+//zkserver---->broker server
 //zkserver控制broker停止接收某个partition的信息，
 //并修改文件名，关闭partition中的fd等
-func (s *RPCServer) CloseAccept(ctx context.Context, req *api.CloseAcceptRequest) (r *api.CloseAcceptResponse, err error){
-	
-	/*
-	待完成
-	*/
+func (s *RPCServer) CloseAccept(ctx context.Context, req *api.CloseAcceptRequest) (r *api.CloseAcceptResponse, err error) {
+
+	ret, err := s.server.CloseAcceptHandle(info{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
+		file_name:  req.Oldfilename,
+		new_name:   req.Newfilename_,
+	})
+	if err != nil {
+		DEBUG(dError, "Err %v err(%v)\n", ret, err.Error())
+		return &api.CloseAcceptResponse{
+			Ret: false,
+		}, err
+	}
 
 	return &api.CloseAcceptResponse{
 		Ret: true,
 	}, nil
 }
 
-
 //zkserver---->broker server
 //通知broker准备向consumer发送信息
-func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest) (r *api.PrepareSendResponse, err error){
+func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest) (r *api.PrepareSendResponse, err error) {
 	ret, err := s.server.PrepareSendHandle(info{
+		consumer:   req.Consumer,
 		topic_name: req.TopicName,
-		part_name: req.PartName,
-		file_name: req.FileName,
-		option: req.Option,
-		offset: req.Offset,
+		part_name:  req.PartName,
+		file_name:  req.FileName,
+		option:     req.Option,
+		offset:     req.Offset,
 	})
 	if err != nil {
 		return &api.PrepareSendResponse{
@@ -375,10 +413,91 @@ func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest
 	}, nil
 }
 
-
 //zkserver---->broker server
 //
+func (s *RPCServer) AddRaftPartition(ctx context.Context, req *api.AddRaftPartitionRequest) (r *api.AddRaftPartitionResponse, err error) {
+	brokers := make(map[string]string)
+	json.Unmarshal(req.Brokers, brokers)
 
+	ret, err := s.server.AddRaftHandle(info{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
+		brokers:    brokers,
+	})
+	if err != nil {
+		return &api.AddRaftPartitionResponse{
+			Ret: false,
+			Err: ret,
+		}, err
+	}
+
+	return &api.AddRaftPartitionResponse{
+		Ret: true,
+		Err: ret,
+	}, nil
+}
+
+func (s *RPCServer) CloseRaftPartition(ctx context.Context, req *api.ConStartGetBrokRequest) (r *api.CloseRaftPartitionResponse, err error) {
+	ret, err := s.server.CloseRaftHandle(info{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
+	})
+	if err != nil {
+		return &api.CloseRaftPartitionResponse{
+			Ret: false,
+			Err: ret,
+		}, err
+	}
+
+	return &api.CloseRaftPartitionResponse{
+		Ret: true,
+		Err: ret,
+	}, nil
+}
+
+func (s *RPCServer) AddFetchPartition(ctx context.Context, req *api.AddFetchPartitionRequest) (r *api.AddFetchPartitionResponse, err error) {
+	//BrokerName to HostPort
+	brokers := make(map[string]string)
+	json.Unmarshal(req.Brokers, brokers)
+
+	ret, err := s.server.AddFetchHandle(info{
+		topic_name:   req.TopicName,
+		part_name:    req.PartName,
+		LeaderBroker: req.LeaderBroker,
+		HostPort:     req.HostPort,
+		brokers:      brokers,
+		file_name:    req.FileName,
+	})
+	if err != nil {
+		return &api.AddFetchPartitionResponse{
+			Ret: false,
+			Err: ret,
+		}, err
+	}
+
+	return &api.AddFetchPartitionResponse{
+		Ret: true,
+		Err: ret,
+	}, nil
+}
+
+func (s *RPCServer) CloseFetchPartition(ctx context.Context, req *api.CloseFetchPartitionRequest) (r *api.CloseFetchPartitionResponse, err error) {
+	ret, err := s.server.CloseFetchHandle(info{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
+	})
+	if err != nil {
+		return &api.CloseFetchPartitionResponse{
+			Ret: false,
+			Err: ret,
+		}, err
+	}
+
+	return &api.CloseFetchPartitionResponse{
+		Ret: true,
+		Err: ret,
+	}, nil
+}
 
 //加入接口，修改文件所属broker，手动迁移文件时，需修改
 //方便水平扩容
