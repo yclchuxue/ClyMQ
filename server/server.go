@@ -4,6 +4,7 @@ import (
 	"ClyMQ/kitex_gen/api"
 	"ClyMQ/kitex_gen/api/client_operations"
 	"ClyMQ/kitex_gen/api/raft_operations"
+	"ClyMQ/kitex_gen/api/server_operations"
 	"ClyMQ/kitex_gen/api/zkserver_operations"
 	"ClyMQ/zookeeper"
 	"context"
@@ -24,28 +25,33 @@ const (
 )
 
 type Server struct {
-	Name      string
+	Name     string
+	zk       *zookeeper.ZK
+	zkclient zkserver_operations.Client
+	mu       sync.RWMutex
+
+	aplych    chan info
 	topics    map[string]*Topic
 	consumers map[string]*Client
-	zk        *zookeeper.ZK
-	zkclient  zkserver_operations.Client
-	mu        sync.RWMutex
-
-	aplych  chan info
-	brokers map[string]*raft_operations.Client
+	brokers   map[string]*raft_operations.Client
 
 	//raft
 	parts_rafts *parts_raft
+
+	//fetch
+	parts_fetch   map[string]string                    //topicName + partitionName to broker HostPort
+	brokers_fetch map[string]*server_operations.Client //brokerName to Client
 }
 
 type Key struct {
+	Size        int   `json:"size"`
 	Start_index int64 `json:"start_index"`
 	End_index   int64 `json:"end_index"`
-	Size        int   `json:"size"`
 }
 
 type Message struct {
 	Index      int64  `json:"index"`
+	Size 	   int8   `json:"size"`
 	Topic_name string `json:"topic_name"`
 	Part_name  string `json:"part_name"`
 	Msg        []byte `json:"msg"`
@@ -73,11 +79,17 @@ type info struct {
 	producer string
 	consumer string
 	cmdindex int64
-	message  string
+	// startIndex  int64
+	// endIndex  	int64
+	message  []byte
 
 	//raft
 	brokers map[string]string
 	me      int
+
+	//fetch
+	LeaderBroker string
+	HostPort     string
 }
 
 // type startget struct {
@@ -99,7 +111,11 @@ func (s *Server) make(opt Options) {
 
 	s.consumers = make(map[string]*Client)
 	s.topics = make(map[string]*Topic)
-	name = GetIpport()
+	s.brokers = make(map[string]*raft_operations.Client)
+	s.parts_fetch = make(map[string]string)
+	s.brokers_fetch = make(map[string]*server_operations.Client)
+	s.aplych = make(chan info)
+
 	s.CheckList()
 	s.Name = opt.Name
 
@@ -109,7 +125,7 @@ func (s *Server) make(opt Options) {
 
 	//在zookeeper上创建一个永久节点, 若存在则不需要创建
 	err := s.zk.RegisterNode(zookeeper.BrokerNode{
-		Name: s.Name,
+		Name:     s.Name,
 		HostPort: opt.Broker_Host_Port,
 	})
 	if err != nil {
@@ -140,7 +156,7 @@ func (s *Server) make(opt Options) {
 
 //接收applych管道的内容
 //写入partition文件中
-func (s *Server) GetApplych(applych chan info){
+func (s *Server) GetApplych(applych chan info) {
 
 	for msg := range applych {
 		s.mu.RLock()
@@ -149,7 +165,7 @@ func (s *Server) GetApplych(applych chan info){
 
 		if !ok {
 			DEBUG(dError, "topic(%v) is not in this broker\n", msg.topic_name)
-		}else{
+		} else {
 			topic.addMessage(msg)
 		}
 	}
@@ -230,6 +246,40 @@ func (s *Server) PrepareAcceptHandle(in info) (ret string, err error) {
 		s.topics[in.topic_name] = topic
 	}
 
+	s.mu.Unlock()
+	//检查或创建partition
+	return topic.PrepareAcceptHandle(in)
+}
+
+//停止接收文件，并将文件名修改成newfilename
+func (s *Server) CloseAcceptHandle(in info) (ret string, err error) {
+	s.mu.RLock()
+
+	s.mu.RUnlock()
+}
+
+// PrepareSendHandle
+//准备发送信息，
+//检查topic和subscription是否存在，不存在则需要创建
+//检查该文件的config是否存在，不存在则创建，并开启协程
+//协程设置超时时间，时间到则关闭
+func (s *Server) PrepareSendHandle(in info) (ret string, err error) {
+	//检查或创建topic
+	s.mu.Lock()
+	topic, ok := s.topics[in.topic_name]
+	if !ok {
+		topic = NewTopic(in.topic_name)
+		s.topics[in.topic_name] = topic
+	}
+	s.mu.Unlock()
+	//检查或创建partition
+	return topic.PrepareSendHandle(in, &s.zkclient)
+}
+
+func (s Server) AddRaftHandle(in info) (ret string, err error) {
+	//检测该Partition的Raft是否已经启动
+
+	s.mu.Lock()
 	var peers []*raft_operations.Client
 	for k, v := range in.brokers {
 		if k != s.Name {
@@ -250,30 +300,72 @@ func (s *Server) PrepareAcceptHandle(in info) (ret string, err error) {
 	s.parts_rafts.AddPart_Raft(peers, in.me, in.topic_name, in.part_name, s.aplych)
 
 	s.mu.Unlock()
-	//检查或创建partition
-	return topic.PrepareAcceptHandle(in)
+
+	return ret, err
 }
 
-func (s *Server) CloseAcceptHandle(in info) {
+func (s *Server) CloseRaftHandle(in info) (ret string, err error) {
 
 }
 
-// PrepareSendHandle
-//准备发送信息，
-//检查topic和subscription是否存在，不存在则需要创建
-//检查该文件的config是否存在，不存在则创建，并开启协程
-//协程设置超时时间，时间到则关闭
-func (s *Server) PrepareSendHandle(in info) (ret string, err error) {
-	//检查或创建topic
-	s.mu.Lock()
-	topic, ok := s.topics[in.topic_name]
-	if !ok {
-		topic = NewTopic(in.topic_name)
-		s.topics[in.topic_name] = topic
+func (s *Server) AddFetchHandle(in info) (ret string, err error) {
+	//检测该Partition的fetch机制是否已经启动
+
+	if in.LeaderBroker == s.Name {
+		//Leader Broker将准备好接收follower的Pull请求
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		topic, ok := s.topics[in.topic_name]
+		if !ok {
+			ret = "this topic is not in this broker"
+			DEBUG(dError, "%v, info(%v)\n", ret, in)
+			return ret, errors.New(ret)
+		}
+		//给每个follower broker准备node（PSB_PULL），等待pull请求
+		for BrokerName, _ := range in.brokers {
+			ret, err = topic.PrepareSendHandle(info{
+				topic_name: in.topic_name,
+				part_name:  in.part_name,
+				file_name:  in.file_name,
+				consumer:   BrokerName,
+				option:     4, //PSB_PULL
+			}, &s.zkclient)
+			if err != nil {
+				DEBUG(dError, err.Error())
+			}
+		}
+		return ret, err
+	} else {
+		str := in.topic_name + in.part_name
+		s.mu.Lock()
+		broker, ok := s.brokers_fetch[in.LeaderBroker]
+		if !ok {
+			broker, err := server_operations.NewClient(s.Name, client.WithHostPorts(in.HostPort))
+			if err != nil {
+				DEBUG(dError, err.Error())
+				return err.Error(), err
+			}
+			s.brokers_fetch[in.LeaderBroker] = &broker
+		}
+
+		_, ok = s.parts_fetch[str]
+		if !ok {
+			s.parts_fetch[str] = in.LeaderBroker
+		}
+		topic, ok := s.topics[in.topic_name]
+		if !ok {
+			ret = "this topic is not in this broker"
+			DEBUG(dError, "%v, info(%v)\n", ret, in)
+			return ret, errors.New(ret)
+		}
+		s.mu.Unlock()
+
+		return s.FetchMsg(in, broker, topic)
 	}
-	s.mu.Unlock()
-	//检查或创建partition
-	return topic.PrepareSendHandle(in, &s.zkclient)
+}
+
+func (s *Server) CloseFetchHandle(in info) (ret string, err error) {
+
 }
 
 func (s *Server) InfoHandle(ipport string) error {
@@ -386,7 +478,7 @@ func (s *Server) UnSubHandle(in info) error {
 
 //start到该partition中的raft集群中
 //收到返回后判断该写入还是返回
-func (s *Server) PushHandle(in info) (ret string, err error ){
+func (s *Server) PushHandle(in info) (ret string, err error) {
 
 	DEBUG(dLog, "get Message form producer\n")
 	s.mu.RLock()
@@ -401,11 +493,11 @@ func (s *Server) PushHandle(in info) (ret string, err error ){
 	}
 
 	switch in.ack {
-	case -1:		//raft同步,并写入
+	case -1: //raft同步,并写入
 		ret, err = part_raft.Append(in)
-	case 1:			//leader写入,不等待同步
+	case 1: //leader写入,不等待同步
 		err = topic.addMessage(in)
-	case 0:			//直接返回
+	case 0: //直接返回
 		go topic.addMessage(in)
 	}
 
@@ -422,13 +514,16 @@ func (s *Server) PushHandle(in info) (ret string, err error ){
 func (s *Server) PullHandle(in info) (MSGS, error) {
 
 	/*
+		若该请求属于PTP则
 		读取index，获得上次的index，写入zookeeper中
 	*/
-	s.zkclient.UpdateOffset(context.Background(), &api.UpdateOffsetRequest{
-		Topic: in.topic_name,
-		Part: in.part_name,
-		Offset: in.offset,
-	})
+	if in.option == TOPIC_NIL_PTP_PULL {
+		s.zkclient.UpdateOffset(context.Background(), &api.UpdateOffsetRequest{
+			Topic:  in.topic_name,
+			Part:   in.part_name,
+			Offset: in.offset,
+		})
+	}
 
 	s.mu.RLock()
 	topic, ok := s.topics[in.topic_name]
@@ -439,4 +534,109 @@ func (s *Server) PullHandle(in info) (MSGS, error) {
 	}
 
 	return topic.PullMessage(in)
+}
+
+func (s *Server) FetchMsg(in info, client *server_operations.Client, topic *Topic) (ret string, err error) {
+	//向zkserver请求向Leader Broker Pull信息
+
+	//向LeaderBroker发起Pull请求
+	//获得本地本地当前文件end_index
+	File := topic.GetFile(in)
+	fd := File.OpenFile()
+	index := File.GetIndex(fd)
+	index += 1
+	// _, err := File.FindOffset(fd, index)
+	if err != nil {
+		DEBUG(dError, err.Error())
+		return err.Error(), err
+	}
+
+	if in.file_name != "Nowfile.txt" {
+		//当文件名不为nowfile时
+		//创建一partition, 并向该File中写入内容
+
+		go func() {
+
+			Partition := NewPartition(in.topic_name, in.part_name)
+			Partition.StartGetMessage(File, fd, in)
+
+			for {
+				resp, err := (*client).Pull(context.Background(), &api.PullRequest{
+					Consumer: s.Name,
+					Topic:    in.topic_name,
+					Key:      in.part_name,
+					Offset:   index,
+				})
+
+				if err != nil {
+					DEBUG(dError, "Err %v, err(%v)\n", resp.Err, err.Error())
+				}
+				
+				if resp.StartIndex <= index && resp.EndIndex > index {
+					//index 处于返回包的中间位置
+					//需要截断该宝包，并写入
+					//your code
+					DEBUG(dLog, "need your code\n")
+				}
+
+				node := Key{
+					Start_index: resp.StartIndex,
+					End_index:   resp.EndIndex,
+					Size:        len(resp.Msgs),
+				}
+
+				File.WriteFile(fd, node, resp.Msgs)
+				index = resp.EndIndex + 1
+			}
+
+		}()
+
+	} else {
+		//当文件名为nowfile时
+		//zkserver已经让该broker准备接收文件
+		//直接调用addMessage
+
+		go func() {
+			s.mu.RLock()
+			topic, ok := s.topics[in.topic_name]
+			s.mu.RUnlock()
+			if !ok {
+				DEBUG(dError, err.Error())
+			}
+
+			resp, err := (*client).Pull(context.Background(), &api.PullRequest{
+				Consumer: s.Name,
+				Topic:    in.topic_name,
+				Key:      in.part_name,
+				Offset:   index,
+			})
+
+			if err != nil {
+				DEBUG(dError, "Err %v, err(%v)\n", resp.Err, err.Error())
+			}
+
+			msgs := make([]Message, resp.Size)
+			json.Unmarshal(resp.Msgs, &msgs)
+
+			start_index := resp.StartIndex
+			for _, msg := range msgs {
+				
+				if index == start_index {
+					err := topic.addMessage(info{
+						topic_name: in.topic_name,
+						part_name:  in.part_name,
+						size:       msg.Size,
+						message:    msg.Msg,
+					})
+					if err != nil {
+						DEBUG(dError, err.Error())
+					}
+				}
+				index++
+			}
+
+		}()
+
+	}
+	return ret, err
 }
