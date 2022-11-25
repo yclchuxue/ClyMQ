@@ -38,7 +38,8 @@ type Op struct {
 	CSM       map[string]int64
 	CDM       map[string]int64
 
-	Msg 	  string
+	Msg 	  []byte
+	Size 	  int8
 }
 
 type COMD struct {
@@ -159,6 +160,7 @@ func (p *parts_raft) Append(in info) (string, error) {
 		Part: in.part_name,
 		Tpart:     str,
 		Msg: 	   in.message,
+		Size:      in.size,
 	}
 
 	p.mu.Lock()
@@ -313,6 +315,7 @@ func (p *parts_raft)StartServer() {
 										message: O.Msg,
 										topic_name: O.Topic,
 										part_name: O.Part,
+										size:      O.Size,
 									}
 
 								}
