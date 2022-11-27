@@ -4,8 +4,10 @@ struct PushRequest {
     1: string producer
     2: string topic
     3: string key
-    4: string message
-    5: i64    index
+    4: binary message
+    5: i64    StartIndex
+    6: i64    EndIndex
+    7: i8     Size
 }
 
 struct PushResponse {
@@ -27,6 +29,7 @@ struct PullResponse {
     3: i64      Start_index
     4: i64      End_index
     5: i8       Size
+    6: string   Err
 }
 
 //consmer发送自己的host和ip,使broker连接上自己
@@ -86,6 +89,18 @@ struct PrepareAcceptResponse{
     2:  string  err
 }
 
+struct PrepareStateRequest{
+    1:  string  TopicName
+    2:  string  PartName
+    3:  i8      State
+    4:  binary  Brokers
+}
+
+struct PrepareStateResponse{
+    1:  bool    Ret
+    2:  string  Err
+}
+
 struct CloseAcceptRequest{
     1:  string  topic_name
     2:  string  part_name
@@ -100,11 +115,12 @@ struct CloseAcceptResponse{
 }
 
 struct PrepareSendRequest{
-    1:  string  topic_name
-    2:  string  part_name
-    3:  string  file_name
-    4:  i8      option
-    5:  i64     offset
+    1:  string  consumer
+    2:  string  topic_name
+    3:  string  part_name
+    4:  string  file_name
+    5:  i8      option
+    6:  i64     offset
 }
 
 struct PrepareSendResponse{
@@ -112,21 +128,67 @@ struct PrepareSendResponse{
     2:  string  err   //若已经准备好“had_done”
 }
 
+struct AddRaftPartitionRequest {
+    1:  string  TopicName
+    2:  string  PartName
+    3:  binary  Brokers
+}
+
+struct AddRaftPartitionResponse{
+    1:  bool    Ret
+    2:  string  Err
+}
+
+struct CloseRaftPartitionRequest{
+    1:  string  TopicName
+    2:  string  PartName
+}
+
+struct CloseRaftPartitionResponse{
+    1:  bool    Ret
+    2:  string  Err
+}
+
+struct AddFetchPartitionRequest{
+    1:  string  TopicName
+    2:  string  PartName
+    3:  string  LeaderBroker
+    4:  string  HostPort
+    5:  binary  Brokers
+    6:  string  FileName
+}
+
+struct AddFetchPartitionResponse{
+    1:  bool    Ret
+    2:  string  Err
+}
+
+struct CloseFetchPartitionRequest{
+    1:  string  TopicName
+    2:  string  PartName
+}
+
+struct CloseFetchPartitionResponse{
+    1:  bool    Ret
+    2:  string  Err
+}
+
 service Server_Operations {
-    PushResponse push(1: PushRequest req)               //producer used
-    PullResponse pull(1: PullRequest req)               //
-    InfoResponse ConInfo(1: InfoRequest req)            //consumer used
-    InfoGetResponse StarttoGet(1: InfoGetRequest req)   //consumer used
+    PushResponse            push(       1: PushRequest      req)               //producer used
+    PullResponse            pull(       1: PullRequest      req)               //
+    InfoResponse            ConInfo(    1: InfoRequest      req)            //consumer used
+    InfoGetResponse         StarttoGet( 1: InfoGetRequest   req)   //consumer used
 
     //zkserver used this rpc to request broker server
-    PrepareAcceptResponse   PrepareAccept(1: PrepareAcceptRequest req)
-    CloseAcceptResponse     CloseAccept(1: CloseAcceptRequest req)
-    PrepareSendResponse     PrepareSend(1: PrepareSendRequest req)
+    PrepareAcceptResponse   PrepareAccept(  1: PrepareAcceptRequest req)
+    CloseAcceptResponse     CloseAccept(    1: CloseAcceptRequest   req)
+    PrepareSendResponse     PrepareSend(    1: PrepareSendRequest   req)
+    PrepareStateResponse    PrepareState(   1: PrepareStateRequest  req)
 
-    //AddRaftPartition
-    //CloseRaftPartition
-    //AddFetchPartition
-    //CloseFetchPartition
+    AddRaftPartitionResponse        AddRaftPartition(   1: AddRaftPartitionRequest      req)
+    CloseRaftPartitionResponse      CloseRaftPartition( 1: CloseRaftPartitionRequest    req)
+    AddFetchPartitionResponse       AddFetchPartition(  1: AddFetchPartitionRequest     req)
+    CloseFetchPartitionResponse     CloseFetchPartition(1: CloseFetchPartitionRequest   req)
 }
 
 //broker server 将信息发送到zkserver， zkserver连接上broker server
@@ -158,6 +220,7 @@ struct ProGetBrokRequest {
 struct ProGetBrokResponse {
     1:  bool    ret
     2:  string  broker_host_port
+    3:  string  Err
 }
 
 //consumer 请求zkserver 
@@ -229,22 +292,47 @@ struct SetPartitionStateResponse{
     2: string   err
 }
 
+struct BecomeLeaderRequest {
+    1: string   Broker
+    2: string   Topic
+    3: string   Partition
+}
+
+struct BecomeLeaderResponse {
+    1: bool     ret
+}
+
+struct GetNewLeaderRequest {
+    1: string   TopicName
+    2: string   PartName
+    3: string   BlockName
+}
+
+struct GetNewLeaderResponse {
+    1: bool     Ret
+    2: string   LeaderBroker
+    3: string   HostPort
+}
+
 service ZkServer_Operations {
     //producer和consumer
-    SubResponse  Sub(1:  SubRequest  req)               //consumer used
-    CreateTopicResponse CreateTopic(1: CreateTopicRequest req)
-    CreatePartResponse  CreatePart(1: CreatePartRequest req)
-    SetPartitionStateResponse SetPartitionState(1: SetPartitionStateRequest req)
-    ProGetBrokResponse ProGetBroker(1:  ProGetBrokRequest req)
-    ConStartGetBrokResponse ConStartGetBroker(1:  ConStartGetBrokRequest req)
+    SubResponse         Sub(            1:  SubRequest          req)               //consumer used
+    CreateTopicResponse CreateTopic(    1:  CreateTopicRequest  req)
+    CreatePartResponse  CreatePart(     1:  CreatePartRequest   req)
+    ProGetBrokResponse  ProGetBroker(   1:  ProGetBrokRequest   req)
+    SetPartitionStateResponse   SetPartitionState(  1: SetPartitionStateRequest req)
+    ConStartGetBrokResponse     ConStartGetBroker(  1: ConStartGetBrokRequest   req)
 
     //broker
-    BroInfoResponse BroInfo(1: BroInfoRequest req)  //broker 发送info让zkserver连接broker
+    BroInfoResponse         BroInfo(        1: BroInfoRequest       req)  //broker 发送info让zkserver连接broker
     //broker更新topic-partition的offset
-    UpdateOffsetResponse UpdateOffset(1: UpdateOffsetRequest req)
-
-    //broker 用于恢复缓存的，暂时不使用
-    BroGetConfigResponse BroGetConfig(1:    BroGetConfigRequest req)
+    UpdateOffsetResponse    UpdateOffset(   1: UpdateOffsetRequest  req)
+    //broker成为新的leader
+    BecomeLeaderResponse    BecomeLeader(   1: BecomeLeaderRequest  req)
+    //broker获取新的Leader
+    GetNewLeaderResponse    GetNewLeader(   1: GetNewLeaderRequest  req)
+    //broker用于恢复缓存的，暂时不使用
+    BroGetConfigResponse    BroGetConfig(   1: BroGetConfigRequest  req)
 }
 
 struct PubRequest{
@@ -268,6 +356,6 @@ struct PingPongResponse{
 }
 
 service Client_Operations {
-    PubResponse pub(1: PubRequest req)
-    PingPongResponse pingpong(1: PingPongRequest req)
+    PubResponse         pub(        1: PubRequest       req)
+    PingPongResponse    pingpong(   1: PingPongRequest  req)
 }
