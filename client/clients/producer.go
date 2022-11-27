@@ -22,7 +22,7 @@ type Producer struct {
 type Message struct {
 	Topic_name string
 	Part_name  string
-	Msg        string
+	Msg        []byte
 }
 
 func NewProducer(zkbroker string, name string) (*Producer, error){

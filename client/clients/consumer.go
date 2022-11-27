@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 
@@ -85,7 +86,7 @@ func (c *Consumer) SendInfo(port string, cli *server_operations.Client) error {
 	return err
 }
 
-func (c *Consumer) SubScription(topic, partition string, option int8) (err error) {
+func (c *Consumer) Subscription(topic, partition string, option int8) (err error) {
 	//向zkserver订阅topic或partition，
 	c.mu.RLock()
 	zk := c.zkBroker
@@ -107,11 +108,11 @@ func (c *Consumer) SubScription(topic, partition string, option int8) (err error
 func (c *Consumer) StartGet(info Info) (parts []PartKey, ret string, err error) {
 
 	resp, err := c.zkBroker.ConStartGetBroker(context.Background(), &api.ConStartGetBrokRequest{
-		CliName: c.Name,
+		CliName:   c.Name,
 		TopicName: info.Topic,
-		PartName: info.Part,
-		Option: info.Option,
-		Index: info.Offset,
+		PartName:  info.Part,
+		Option:    info.Option,
+		Index:     info.Offset,
 	})
 
 	if err != nil || !resp.Ret {
@@ -122,18 +123,21 @@ func (c *Consumer) StartGet(info Info) (parts []PartKey, ret string, err error) 
 	// json.Unmarshal(resp.Broks, &broks)
 
 	parts = make([]PartKey, resp.Size)
-	json.Unmarshal(resp.Parts, &parts)		
+	err = json.Unmarshal(resp.Parts, &parts)
+	if err != nil {
+		return nil, "", err
+	}
 
-	if info.Option == 1 || info.Option == 3{  //pub
+	if info.Option == 1 || info.Option == 3 { //pub
 		ret, err = c.StartGetToBroker(parts, info)
 	}
 	return parts, ret, err
 }
 
-func (c *Consumer)StartGetToBroker(parts []PartKey, info Info) (ret string, err error) {
-	
+func (c *Consumer) StartGetToBroker(parts []PartKey, info Info) (ret string, err error) {
+
 	//连接上各个broker，并发送start请求
-	
+
 	for _, part := range parts {
 
 		if part.Err != "ok" {
@@ -142,15 +146,15 @@ func (c *Consumer)StartGetToBroker(parts []PartKey, info Info) (ret string, err 
 		}
 
 		rep := &api.InfoGetRequest{
-			CliName: c.Name,
+			CliName:   c.Name,
 			TopicName: info.Topic,
-			PartName: part.Name,
-			Option: info.Option,
-			Offset: info.Offset,
+			PartName:  part.Name,
+			Option:    info.Option,
+			Offset:    info.Offset,
 		}
-		
+
 		bro_cli, ok := c.Brokers[part.Broker_name]
-		if !ok { 
+		if !ok {
 			bro_cli, err := server_operations.NewClient(c.Name, client.WithHostPorts(part.Broker_H_P))
 			if err != nil {
 				return ret, err
@@ -164,25 +168,31 @@ func (c *Consumer)StartGetToBroker(parts []PartKey, info Info) (ret string, err 
 
 		if info.Option == 3 { //psb
 			bro_cli.StarttoGet(context.Background(), rep)
-		}	
+		}
 	}
 	return ret, nil
 }
 
 //向broker索要信息
 func (c *Consumer) Pull(info Info) (int64, int64, []Msg, error) {
-	resp, err :=  info.Cli.Pull(context.Background(), &api.PullRequest{
+	resp, err := info.Cli.Pull(context.Background(), &api.PullRequest{
 		Consumer: c.Name,
-		Topic: info.Topic,
-		Key: info.Part,
-		Offset: info.Offset,
+		Topic:    info.Topic,
+		Key:      info.Part,
+		Offset:   info.Offset,
 	})
 	if err != nil {
 		return -1, -1, nil, err
 	}
-	
+
 	msgs := make([]Msg, resp.EndIndex-resp.StartIndex)
-	json.Unmarshal(resp.Msgs, &msgs)
+	err = json.Unmarshal(resp.Msgs, &msgs)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	if resp.Err == "file EOF" {
+		return 0, 0, nil, io.EOF
+	}
 
 	return resp.StartIndex, resp.EndIndex, msgs, nil
 }
@@ -193,7 +203,6 @@ type Msg struct {
 	Part_name  string `json:"part_name"`
 	Msg        []byte `json:"msg"`
 }
-
 
 type Info struct {
 	Offset int64

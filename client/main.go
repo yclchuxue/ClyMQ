@@ -29,7 +29,7 @@ func main() {
 			msg := clients.Message{
 				Topic_name:    	"phone_number",
 				Part_name:      "yclchuxue",
-				Msg:  			"18788888888",
+				Msg:  			[]byte("18788888888"),
 			}
 			err := producer.Push(msg)
 			if err != nil {
@@ -44,7 +44,7 @@ func main() {
 		//start a server for pub and pinpong
 		go consumer.Start_server()
 
-		consumer.SubScription("phone_number", "yclchuxue", 2)
+		consumer.Subscription("phone_number", "yclchuxue", 2)
 
 		consumer.StartGet(clients.Info{
 			Offset: 0,
