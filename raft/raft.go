@@ -962,7 +962,12 @@ func (rf *Raft) requestvotes(term int) {
 								}
 							}
 
-							// go rf.Start(nil)
+							go rf.Start(Op{
+								Cli_index: "Leader",
+								Topic: rf.topic_name,
+								Tpart: rf.topic_name+rf.part_name,
+								Part: rf.part_name,
+							})
 
 							go rf.appendentries(rf.currentTerm)
 							DEBUG(dLeader, "S%d  be Leader B\n", rf.me)
@@ -1031,3 +1036,25 @@ func (rf *Raft) ticker() {
 		//log.Printf("S%d AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%d\n", rf.me, ti)
 	}
 }
+
+
+type Op struct {
+	Cli_index string //client的唯一标识
+	Cmd_index int64  //操作id号
+	Ser_index int64  //Server的id
+	Operate   string //这里的操作只有append
+	Tpart     string //这里的shard未topic+partition
+	Topic     string
+	Part      string
+	Num       int
+	// KVS       map[string]string     //我们将返回的start直接交给partition，写入文件中
+	CSM map[string]int64
+	CDM map[string]int64
+
+	Msg  []byte
+	Size int8
+}
+
+
+//节点恢复
+//func (rf *Raft)UpdatePeers()
