@@ -112,7 +112,7 @@ func (s *RPCServer) Pull(ctx context.Context, req *api.PullRequest) (resp *api.P
 			DEBUG(dError, err.Error())
 			return &api.PullResponse{
 				Ret: false,
-			}, nil
+			}, err
 		}
 	}
 
@@ -344,14 +344,14 @@ func (s *RPCServer) PrepareAccept(ctx context.Context, req *api.PrepareAcceptReq
 //zkserver通知broker检查partition的state是否设置，
 //raft集群，或fetch机制是否开启
 func (s *RPCServer) PrepareState(ctx context.Context, req *api.PrepareStateRequest) (r *api.PrepareStateResponse, err error) {
-	brokers := make(map[string]string)
-	json.Unmarshal(req.Brokers, brokers)
+	var Brokers BrokerS
+	json.Unmarshal(req.Brokers, &Brokers)
 
 	ret, err := s.server.PrepareAcceptHandle(info{
 		topic_name: req.TopicName,
 		part_name:  req.PartName,
 		option:     req.State,
-		brokers:    brokers,
+		brokers:    Brokers.Brokers,
 	})
 	if err != nil {
 		return &api.PrepareStateResponse{
@@ -368,10 +368,11 @@ func (s *RPCServer) PrepareState(ctx context.Context, req *api.PrepareStateReque
 
 //zkserver---->broker server
 //zkserver控制broker停止接收某个partition的信息，
-//并修改文件名，关闭partition中的fd等
+//并修改文件名，关闭partition中的fd等(指NowBlock的接收信息)
+//调用者需向zookeeper修改节点信息
 func (s *RPCServer) CloseAccept(ctx context.Context, req *api.CloseAcceptRequest) (r *api.CloseAcceptResponse, err error) {
 
-	ret, err := s.server.CloseAcceptHandle(info{
+	start, end, ret, err := s.server.CloseAcceptHandle(info{
 		topic_name: req.TopicName,
 		part_name:  req.PartName,
 		file_name:  req.Oldfilename,
@@ -386,6 +387,8 @@ func (s *RPCServer) CloseAccept(ctx context.Context, req *api.CloseAcceptRequest
 
 	return &api.CloseAcceptResponse{
 		Ret: true,
+		Startindex: start,
+		Endindex: end,
 	}, nil
 }
 
@@ -413,6 +416,10 @@ func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest
 	}, nil
 }
 
+func (s *RPCServer) BecomeLeader(ctx context.Context, req *api.BecomeLeaderRequest) (r *api.BecomeLeaderResponse, err error) {
+	
+}
+
 //zkserver---->broker server
 //
 func (s *RPCServer) AddRaftPartition(ctx context.Context, req *api.AddRaftPartitionRequest) (r *api.AddRaftPartitionResponse, err error) {
@@ -437,7 +444,7 @@ func (s *RPCServer) AddRaftPartition(ctx context.Context, req *api.AddRaftPartit
 	}, nil
 }
 
-func (s *RPCServer) CloseRaftPartition(ctx context.Context, req *api.ConStartGetBrokRequest) (r *api.CloseRaftPartitionResponse, err error) {
+func (s *RPCServer) CloseRaftPartition(ctx context.Context, req *api.CloseRaftPartitionRequest) (r *api.CloseRaftPartitionResponse, err error) {
 	ret, err := s.server.CloseRaftHandle(info{
 		topic_name: req.TopicName,
 		part_name:  req.PartName,
