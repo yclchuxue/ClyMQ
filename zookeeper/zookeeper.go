@@ -54,9 +54,18 @@ type TopicNode struct {
 type PartitionNode struct {
 	Name      string `json:"name"`
 	TopicName string `json:"topicName"`
-	Option    int8   `json:"option"`    //partition的状态
+	Index     int64  `json:"index"`
+	Option    int8   `json:"option"` //partition的状态
 	DupNum    int8   `json:"dupNum"`
 	PTPoffset int64  `json:"ptpOffset"`
+}
+
+type SubscriptionNode struct {
+	Name          string `json:"name"`
+	TopicName     string `json:"topic"`
+	PartitionName string `json:"part"`
+	Option        int8   `json:"option"`
+	Groups        []byte `json:"groups"`
 }
 
 type BlockNode struct {
@@ -71,9 +80,17 @@ type BlockNode struct {
 }
 
 type DuplicateNode struct {
-	StartOffset int64  `json:"startOffset"`
-	EndOffset   int64  `json:"endOffset"`
-	BrokerName  string `json:"brokerName"`
+	Name          string `json:"name"`
+	TopicName     string `json:"topicName"`
+	PartitionName string `json:"partitionName"`
+	BlockName     string `json:"blockname"`
+	StartOffset   int64  `json:"startOffset"`
+	EndOffset     int64  `json:"endOffset"`
+	BrokerName    string `json:"brokerName"`
+}
+
+type Map struct {
+	Consumers map[string]bool `json:"consumer"`
 }
 
 func (z *ZK) RegisterNode(znode interface{}) (err error) {
@@ -83,6 +100,7 @@ func (z *ZK) RegisterNode(znode interface{}) (err error) {
 	var tnode TopicNode
 	var pnode PartitionNode
 	var blnode BlockNode
+	var dnode DuplicateNode
 
 	i := reflect.TypeOf(znode)
 	switch i.Name() {
@@ -102,6 +120,10 @@ func (z *ZK) RegisterNode(znode interface{}) (err error) {
 		blnode = znode.(BlockNode)
 		path += z.TopicRoot + "/" + blnode.TopicName + "/" + blnode.PartitionName + "/" + blnode.Name
 		data, err = json.Marshal(blnode)
+	case "DuplicateNode":
+		dnode = znode.(DuplicateNode)
+		path += z.TopicRoot + "/" + dnode.TopicName + "/" + dnode.PartitionName + "/" + dnode.BlockName + "/" + dnode.Name
+		data, err = json.Marshal(dnode)
 	}
 
 	if err != nil {
@@ -128,6 +150,26 @@ func (z *ZK) UpdatePartitionNode(pnode PartitionNode) error {
 		return err
 	}
 	data, err := json.Marshal(pnode)
+	if err != nil {
+		return err
+	}
+	_, sate, _ := z.conn.Get(path)
+	_, err = z.conn.Set(path, data, sate.Version)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (z *ZK) UpdateBlockNode(bnode BlockNode) error {
+	path := z.TopicRoot + "/" + bnode.TopicName + "/Partitions/" + bnode.PartitionName + "/" + bnode.Name
+
+	ok, _, err := z.conn.Exists(path)
+	if !ok {
+		return err
+	}
+	data, err := json.Marshal(bnode)
 	if err != nil {
 		return err
 	}
@@ -197,7 +239,8 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 	partitions, _, _ := z.conn.Children(path)
 	for _, part := range partitions {
 
-		PTP_index := z.GetPartitionPTPIndex(path + "/" + part)
+		PNode := z.GetPartitionNode(path + "/" + part)
+		PTP_index := PNode.PTPoffset
 
 		var max_dup DuplicateNode
 		max_dup.EndOffset = 0
@@ -305,6 +348,7 @@ func (z *ZK) CheckSub(info StartGetInfo) bool {
 	return true
 }
 
+//若Leader不在线，则等待一秒继续请求
 func (z *ZK) GetPartNowBrokerNode(topic_name, part_name string) (BrokerNode, BlockNode) {
 	now_block_path := z.TopicRoot + "/" + topic_name + "/" + "partitions" + "/" + part_name + "/" + "NowBlock"
 	for {
@@ -342,12 +386,12 @@ func (z *ZK) GetBrokerNode(name string) BrokerNode {
 	return bronode
 }
 
-func (z *ZK) GetPartitionPTPIndex(path string) int64 {
+func (z *ZK) GetPartitionNode(path string) PartitionNode {
 	var pnode PartitionNode
 	data, _, _ := z.conn.Get(path)
 	json.Unmarshal(data, &pnode)
 
-	return pnode.PTPoffset
+	return pnode
 }
 
 func (z *ZK) GetBlockNode(path string) BlockNode {
@@ -378,10 +422,39 @@ func (z *ZK) GetDuplicateNode(path string) DuplicateNode {
 	return dupnode
 }
 
-//获取当前partition接收信息的文件的文件名
-//返回需要修改成为的文件名
+func (z *ZK) DeleteDupNode(TopicName, PartName, BlockName, DupName string) (ret string, err error) {
+	path := z.TopicRoot + "/" + TopicName + "/" + "partitions" + "/" + PartName + "/" + BlockName + "/" + DupName
 
+	_, sate, _ := z.conn.Get(path)
+	err = z.conn.Delete(path, sate.Version)
+	if err != nil {
+		ret = "delete dupnode fail"
+	}
 
-//将partition的NowBlock的信息中的文件名修改
-//并创建一个新Block节点，将原来Nowlock节点的内容存到这个节点
-//并将NowBlock中的节点信息更新；
+	return ret, err
+}
+
+func (z *ZK) UpdateDupNode(dnode DuplicateNode) (ret string, err error) {
+	path := z.TopicRoot + "/" + dnode.TopicName + "/" + "partitions" + "/" + dnode.PartitionName + "/" + dnode.BlockName + "/" + dnode.Name
+
+	data_dnode, err := json.Marshal(dnode)
+	if err != nil {
+		ret = "DupNode turn byte fail"
+		return ret, err
+	}
+
+	_, sate, _ := z.conn.Get(path)
+	_, err = z.conn.Set(path, data_dnode, sate.Version)
+	if err != nil {
+		ret = "DupNode Update fail"
+	}
+
+	return ret, err
+}
+
+func (z *ZK) GetPartBlockIndex(TopicName, PartName string) int64 {
+	str := z.TopicRoot + "/" + TopicName + "/" + "partitions" + "/" + PartName
+	node := z.GetPartitionNode(str)
+
+	return node.Index
+}
