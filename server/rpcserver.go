@@ -417,7 +417,40 @@ func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest
 }
 
 func (s *RPCServer) BecomeLeader(ctx context.Context, req *api.BecomeLeaderRequest) (r *api.BecomeLeaderResponse, err error) {
-	
+	err = s.zkserver.BecomeLeader(Info_in{
+		cli_name: req.Broker,
+		topic_name: req.Topic,
+		part_name: req.Partition,
+	})
+	if err != nil {
+		return &api.BecomeLeaderResponse{
+			Ret: false,
+		}, err
+	}else{
+		return &api.BecomeLeaderResponse{
+			Ret: true,
+		}, nil
+	}
+}
+
+func (s *RPCServer) GetNewLeader(ctx context.Context, req *api.GetNewLeaderRequest) (r *api.GetNewLeaderResponse, err error) {
+	info, err := s.zkserver.GetNewLeader(Info_in{
+		topic_name: req.TopicName,
+		part_name: req.PartName,
+		blockname: req.BlockName,
+	})
+
+	if err != nil {
+		return &api.GetNewLeaderResponse{
+			Ret: false,
+		}, err
+	}else{
+		return &api.GetNewLeaderResponse{
+			Ret: true,
+			LeaderBroker: info.broker_name,
+			HostPort: info.bro_host_port,
+		}, nil
+	}
 }
 
 //zkserver---->broker server

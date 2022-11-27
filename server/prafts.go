@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -16,34 +17,33 @@ import (
 )
 
 const (
-	TIMEOUT = 1000 * 1000
+	TIMEOUT        = 1000 * 1000
 	ErrNoKey       = "ErrNoKey"
 	ErrWrongGroup  = "ErrWrongGroup"
 	ErrWrongLeader = "ErrWrongLeader"
-	ErrTimeOut	   = "ErrTimeOut"
-	ErrWrongNum	   = "ErrWrongNum"
+	ErrTimeOut     = "ErrTimeOut"
+	ErrWrongNum    = "ErrWrongNum"
 )
 
 type Op struct {
-
-	Cli_index string	//client的唯一标识
-	Cmd_index int64 	//操作id号
-	Ser_index int64		//Server的id
-	Operate   string	//这里的操作只有append
-	Tpart     string	//这里的shard未topic+partition
-	Topic 	  string
-	Part 	  string
+	Cli_index string //client的唯一标识
+	Cmd_index int64  //操作id号
+	Ser_index int64  //Server的id
+	Operate   string //这里的操作只有append
+	Tpart     string //这里的shard为topic+partition
+	Topic     string
+	Part      string
 	Num       int
 	// KVS       map[string]string     //我们将返回的start直接交给partition，写入文件中
-	CSM       map[string]int64
-	CDM       map[string]int64
+	CSM map[string]int64
+	CDM map[string]int64
 
-	Msg 	  []byte
-	Size 	  int8
+	Msg  []byte
+	Size int8
 }
 
 type COMD struct {
-	index   int
+	index int
 	// csm     map[string]int64
 	// cdm     map[string]int64
 
@@ -53,35 +53,35 @@ type COMD struct {
 
 type SnapShot struct {
 	// Kvs    []map[string]string
-	Tpart 	string
+	Tpart string
 	// topic 	string
 	// part 	string
-	Csm    map[string]int64
-	Cdm    map[string]int64
+	Csm map[string]int64
+	Cdm map[string]int64
 	// KVSMAP map[int]int
 	Apliedindex int
 }
 
 type parts_raft struct {
-	mu sync.RWMutex
-	srv_raft 	server.Server
-	Partitions 	map[string]*raft.Raft
+	mu         sync.RWMutex
+	srv_raft   server.Server
+	Partitions map[string]*raft.Raft
+	Leaders    map[string]bool
 
-	me           int
-	appench 	 chan info
-	applyCh      chan raft.ApplyMsg
+	me      int
+	appench chan info
+	applyCh chan raft.ApplyMsg
 
-	maxraftstate int // snapshot if log grows this big
+	maxraftstate int   // snapshot if log grows this big
 	dead         int32 // set by Kill()
 
-	Add     chan COMD
+	Add chan COMD
 
-	// Your definitions here.
 			//part    producer
 	CSM map[string]map[string]int64
 	CDM map[string]map[string]int64
 
-	ChanComd map[int]COMD               //管道getkvs的消息队列
+	ChanComd map[int]COMD //管道getkvs的消息队列
 
 	//多raft,则需要多applyindex
 	applyindexs map[string]int
@@ -96,18 +96,19 @@ func NewParts_Raft() *parts_raft {
 	}
 }
 
-func (p *parts_raft)make(name, host_port string, appench chan info){
+func (p *parts_raft) make(name, host_port string, appench chan info) {
 
-	p.appench 		= appench
-	p.applyCh 		= make(chan raft.ApplyMsg)
-	p.Add 	  		= make(chan COMD)
+	p.appench = appench
+	p.applyCh = make(chan raft.ApplyMsg)
+	p.Add = make(chan COMD)
 
-	p.CDM 			= make(map[string]map[string]int64)
-	p.CSM 			= make(map[string]map[string]int64)
-	p.Partitions 	= make(map[string]*raft.Raft)
-	p.applyindexs 	= make(map[string]int)
+	p.CDM = make(map[string]map[string]int64)
+	p.CSM = make(map[string]map[string]int64)
+	p.Partitions = make(map[string]*raft.Raft)
+	p.applyindexs = make(map[string]int)
+	p.Leaders = make(map[string]bool)
 
-	addr,_ := net.ResolveIPAddr("tcp", host_port)
+	addr, _ := net.ResolveIPAddr("tcp", host_port)
 	var opts []server.Option
 	opts = append(opts, server.WithServiceAddr(addr))
 
@@ -119,17 +120,27 @@ func (p *parts_raft)make(name, host_port string, appench chan info){
 	}
 }
 
-
-
 func (p *parts_raft) Append(in info) (string, error) {
 	// Your code here.
 	str := in.topic_name + in.part_name
-	DEBUG(dLeader, "S%d <-- C%v putappend message(%v) topic_partition(%v)\n", p.me, in.producer,in.cmdindex,str)
+	DEBUG(dLeader, "S%d <-- C%v putappend message(%v) topic_partition(%v)\n", p.me, in.producer, in.cmdindex, str)
 
 	p.mu.Lock()
+	//检查当前partition是否接收信息
+	_, ok := p.Partitions[str]
+	if !ok {
+		ret := "this partition is not in this broker"
+		DEBUG(dLog, "this partition(%v) is not in this broker\n", str)
+		p.mu.Unlock()
+		time.Sleep(200 * time.Millisecond)
+		return ret, errors.New(str)
+	}
 	_, isLeader := p.Partitions[str].GetState()
+
 	if !isLeader {
 		DEBUG(dLog, "S%d this is not leader\n", p.me)
+		p.mu.Unlock()
+		time.Sleep(200 * time.Millisecond)
 		return ErrWrongLeader, nil
 	}
 
@@ -157,10 +168,10 @@ func (p *parts_raft) Append(in info) (string, error) {
 		Cmd_index: in.cmdindex,
 		// Operate:   args.Op,
 		Topic: in.topic_name,
-		Part: in.part_name,
-		Tpart:     str,
-		Msg: 	   in.message,
-		Size:      in.size,
+		Part:  in.part_name,
+		Tpart: str,
+		Msg:   in.message,
+		Size:  in.size,
 	}
 
 	p.mu.Lock()
@@ -181,21 +192,17 @@ func (p *parts_raft) Append(in info) (string, error) {
 		return ErrWrongLeader, nil
 	} else {
 
-		p.mu.Lock()
-		DEBUG(dLog, "S%d lock 312\n", p.me)
-		lastindex, ok := p.CSM[str][in.producer]
-		if !ok {
-			p.CSM[str][in.producer] = 0
-		}
-		p.CSM[str][in.producer] = in.cmdindex
-		p.mu.Unlock()
-
 		for {
 			select {
 			case out := <-p.Add:
+				p.mu.Lock()
+				DEBUG(dLog, "S%d lock 312\n", p.me)
+				
+				p.CSM[str][in.producer] = in.cmdindex
+				p.mu.Unlock()
 				if index == out.index {
 					return OK, nil
-				}else{
+				} else {
 					DEBUG(dLog, "S%d index != out.index pytappend %d != %d\n", p.me, index, out.index)
 				}
 
@@ -203,6 +210,10 @@ func (p *parts_raft) Append(in info) (string, error) {
 				_, isLeader := p.Partitions[str].GetState()
 				ret := ErrTimeOut
 				p.mu.Lock()
+				lastindex, ok := p.CSM[str][in.producer]
+				if !ok {
+					p.CSM[str][in.producer] = 0
+				}
 				DEBUG(dLog, "S%d lock 332\n", p.me)
 				DEBUG(dLeader, "S%d time out\n", p.me)
 				if !isLeader {
@@ -234,9 +245,9 @@ func (p *parts_raft) SendSnapShot(str string) {
 	w := new(bytes.Buffer)
 	e := raft.NewEncoder(w)
 	S := SnapShot{
-		Csm:    p.CSM[str],
-		Cdm:    p.CDM[str],
-		Tpart: 	str,
+		Csm:   p.CSM[str],
+		Cdm:   p.CDM[str],
+		Tpart: str,
 		// Rpcindex:    kv.rpcindex,
 		Apliedindex: p.applyindexs[str],
 	}
@@ -265,7 +276,7 @@ func (p *parts_raft) CheckSnap() {
 	// kv.mu.Unlock()
 }
 
-func (p *parts_raft)StartServer() {
+func (p *parts_raft) StartServer() {
 
 	DEBUG(dSnap, "S%d parts_raft start\n", p.me)
 
@@ -290,13 +301,23 @@ func (p *parts_raft)StartServer() {
 						O := m.Command.(Op)
 
 						DEBUG(dLog, "S%d TTT CommandValid(%v) applyindex(%v) CommandIndex(%v) CDM[C%v](%v) from(%v)\n", p.me, m.CommandValid, p.applyindexs[O.Tpart], m.CommandIndex, O.Cli_index, O.Cmd_index, O.Ser_index)
-						
+
 						if p.applyindexs[O.Tpart]+1 == m.CommandIndex {
 
 							if O.Cli_index == "TIMEOUT" {
 								DEBUG(dLog, "S%d for TIMEOUT update applyindex %v to %v\n", p.me, p.applyindexs[O.Tpart], m.CommandIndex)
 								p.applyindexs[O.Tpart] = m.CommandIndex
-							} else if p.CDM[O.Tpart][O.Cli_index] < O.Cmd_index {
+							}else if O.Cli_index == "Leader" {
+								DEBUG(dLog, "S%d tPart(%v) become leader\n", p.me, O.Tpart)
+								p.applyindexs[O.Tpart] = m.CommandIndex
+
+								p.appench <- info{
+									producer:   O.Cli_index,
+									topic_name: O.Topic,
+									part_name:  O.Part,
+								}
+
+							}else if p.CDM[O.Tpart][O.Cli_index] < O.Cmd_index {
 								DEBUG(dLeader, "S%d update CDM[%v] from %v to %v update applyindex %v to %v\n", p.me, O.Cli_index, p.CDM[O.Tpart][O.Cli_index], O.Cmd_index, p.applyindexs[O.Tpart], m.CommandIndex)
 								p.applyindexs[O.Tpart] = m.CommandIndex
 
@@ -311,11 +332,11 @@ func (p *parts_raft)StartServer() {
 									}
 
 									p.appench <- info{
-										producer: O.Cli_index,
-										message: O.Msg,
+										producer:   O.Cli_index,
+										message:    O.Msg,
 										topic_name: O.Topic,
-										part_name: O.Part,
-										size:      O.Size,
+										part_name:  O.Part,
+										size:       O.Size,
 									}
 
 								}
@@ -377,7 +398,7 @@ func (p *parts_raft)StartServer() {
 					}
 					DEBUG(dLog, "S%d have log time applied\n", p.me)
 					p.mu.RLock()
-					for str, raft := range p.Partitions{
+					for str, raft := range p.Partitions {
 						O.Tpart = str
 						raft.Start(O)
 					}
@@ -389,14 +410,12 @@ func (p *parts_raft)StartServer() {
 	}()
 }
 
-
-
 //检查或创建一个raft
 //添加一个需要raft同步的partition
-func (p *parts_raft)AddPart_Raft(peers []*raft_operations.Client, me int, topic_name, part_name string, appendch chan info) {
+func (p *parts_raft) AddPart_Raft(peers []*raft_operations.Client, me int, topic_name, part_name string, appendch chan info) {
 
 	//启动一个raft，即调用Make(), 需要提供各节点broker的 raft_clients, 和该partition的管道，
-	str := topic_name+part_name
+	str := topic_name + part_name
 	p.mu.Lock()
 	_, ok := p.Partitions[str]
 	if !ok {
@@ -407,62 +426,71 @@ func (p *parts_raft)AddPart_Raft(peers []*raft_operations.Client, me int, topic_
 	p.mu.Unlock()
 }
 
-func (p *parts_raft)DeletePart_raft(){
+func (p *parts_raft) DeletePart_raft(TopicName, PartName string) error {
+	str := TopicName + PartName
 
+	p.mu.Lock()
+	defer 	p.mu.Unlock()
+	raft, ok := p.Partitions[str]
+	if !ok {
+		DEBUG(dError, "this tpoic-partition(%v) is not in this broker\n", str)
+		return errors.New("this tpoic-partition is not in this broker")
+	}else{
+		raft.Kill()
+		delete(p.Partitions, str)
+		return nil
+	}
 }
 
-
-
-
-func (p *parts_raft)RequestVote(ctx context.Context, rep *api.RequestVoteArgs_) (r *api.RequestVoteReply, err error){
+func (p *parts_raft) RequestVote(ctx context.Context, rep *api.RequestVoteArgs_) (r *api.RequestVoteReply, err error) {
 	str := rep.TopicName + rep.PartName
 	p.mu.RLock()
-	resp :=  p.Partitions[str].RequestVote(&raft.RequestVoteArgs{
-		Term: int(rep.Term),
-		CandidateId: int(rep.CandidateId),
+	resp := p.Partitions[str].RequestVote(&raft.RequestVoteArgs{
+		Term:         int(rep.Term),
+		CandidateId:  int(rep.CandidateId),
 		LastLogIndex: int(rep.LastLogIndex),
 		LastLogIterm: int(rep.LastLogIterm),
 	})
 	p.mu.RUnlock()
 
 	return &api.RequestVoteReply{
-		Term: int8(resp.Term),
+		Term:        int8(resp.Term),
 		VoteGranted: resp.VoteGranted,
 	}, nil
 }
 
-func (p *parts_raft)AppendEntries(ctx context.Context, rep *api.AppendEntriesArgs_) (r *api.AppendEntriesReply, err error){
+func (p *parts_raft) AppendEntries(ctx context.Context, rep *api.AppendEntriesArgs_) (r *api.AppendEntriesReply, err error) {
 	str := rep.TopicName + rep.PartName
 	var array []raft.LogNode
 	json.Unmarshal(rep.Entries, &array)
 	p.mu.RLock()
 	resp := p.Partitions[str].AppendEntries(&raft.AppendEntriesArgs{
-		Term: int(rep.Term),
-		LeaderId: int(rep.LeaderId),
+		Term:         int(rep.Term),
+		LeaderId:     int(rep.LeaderId),
 		PrevLogIndex: int(rep.PrevLogIndex),
 		PrevLogIterm: int(rep.PrevLogIterm),
 		LeaderCommit: int(rep.LeaderCommit),
-		Entries: array,
+		Entries:      array,
 	})
 	p.mu.RUnlock()
 	return &api.AppendEntriesReply{
-		Success: resp.Success,
-		Term: int8(resp.Term),
-		Logterm: int8(resp.Logterm),
+		Success:        resp.Success,
+		Term:           int8(resp.Term),
+		Logterm:        int8(resp.Logterm),
 		Termfirstindex: int8(resp.Termfirstindex),
 	}, nil
 }
 
-func (p *parts_raft)SnapShot(ctx context.Context, rep *api.SnapShotArgs_) (r *api.SnapShotReply, err error){
+func (p *parts_raft) SnapShot(ctx context.Context, rep *api.SnapShotArgs_) (r *api.SnapShotReply, err error) {
 	str := rep.TopicName + rep.PartName
 	p.mu.RLock()
 	resp := p.Partitions[str].InstallSnapshot(&raft.SnapShotArgs{
-		Term: int(rep.Term),
-		LeaderId: int(rep.LeaderId),
+		Term:              int(rep.Term),
+		LeaderId:          int(rep.LeaderId),
 		LastIncludedIndex: int(rep.LastIncludedIndex),
-		LastIncludedTerm: int(rep.LastIncludedTerm),
-		Log: rep.Log,
-		Snapshot: rep.Snapshot,
+		LastIncludedTerm:  int(rep.LastIncludedTerm),
+		Log:               rep.Log,
+		Snapshot:          rep.Snapshot,
 	})
 	p.mu.RUnlock()
 	return &api.SnapShotReply{

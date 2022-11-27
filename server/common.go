@@ -17,6 +17,7 @@ type Options struct {
 	Tag 				string
 	Zkserver_Host_Port 	string
 	Broker_Host_Port 	string
+	Raft_Host_Port		string
 }
 
 //Broker向ZKServer发送自己的新能指标,用于按权值负载均衡
@@ -51,6 +52,10 @@ type BloNodeInfo struct{
 	File_name		string
 }
 
+type BrokerS struct {
+	Brokers map[string]string 	`json:"brokers"`
+}
+
 const (
 	ZKBROKER  	=	"zkbroker"
 	BROKER 		=	"broker"
@@ -78,8 +83,8 @@ func CheckFileOrList(path string) (ret bool) {
 }
 
 
-func MovName(path, new_name string) error {
-
+func MovName(OldFilePath, NewFilePath string) error {
+	return os.Rename(OldFilePath, NewFilePath)
 }
 
 func CreateList(path string) error {

@@ -65,8 +65,14 @@ func CheckFile(path_name string) (file *File, fd *os.File, Err string, err error
 }
 
 //修改文件名
-func (f *File) Update(file_name string) {
-
+func (f *File) Update(path, file_name string) error {
+	OldFilePath := path + "/" + f.filename
+	NewFilePath := path + "/" + file_name
+	f.mu.Lock()
+	f.filename = file_name
+	f.mu.Unlock()
+	
+	return MovName(OldFilePath, NewFilePath)
 }
 
 func (f *File) OpenFile() *os.File {
@@ -75,6 +81,28 @@ func (f *File) OpenFile() *os.File {
 	f.mu.RUnlock()
 
 	return file
+}
+
+func (f *File)GetFirstIndex(file *os.File) int64 {
+	var node Key
+	data_node := make([]byte, NODE_SIZE)
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	_, err := file.ReadAt(data_node, 0)
+
+	if err == io.EOF {
+		//读到文件末尾
+		DEBUG(dLeader, "read All file, do not find this index")
+		return 0
+	}
+
+	json.Unmarshal(data_node, &node)
+
+	f.mu.RUnlock()
+	
+	return node.Start_index
 }
 
 //读取文件，获取该partition的最后一个index

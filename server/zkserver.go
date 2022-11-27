@@ -7,6 +7,7 @@ import (
 	"ClyMQ/zookeeper"
 	"context"
 	"encoding/json"
+	"sort"
 	"sync"
 
 	"github.com/cloudwego/kitex/client"
@@ -27,6 +28,7 @@ type Info_in struct {
 	cli_name   string
 	topic_name string
 	part_name  string
+	blockname  string
 	index      int64
 	option     int8
 	dupnum     int8
@@ -395,6 +397,13 @@ func (z *ZkServer) CreateNowBlock(info Info_in) error {
 	return z.zk.RegisterNode(brock_node)
 }
 
+func (z *ZkServer) BecomeLeader(info Info_in) error {
+	now_block_path := z.zk.TopicRoot + "/" + info.topic_name + "/" + "partitions" + "/" + info.part_name + "/" + "NowBlock"
+	NowBlock := z.zk.GetBlockNode(now_block_path)
+	NowBlock.LeaderBroker = info.cli_name
+	return z.zk.UpdateBlockNode(NowBlock)
+}
+
 func (z *ZkServer) SubHandle(info Info_in) error {
 	//在zookeeper上创建sub节点，若节点已经存在，则加入group中
 
@@ -405,10 +414,8 @@ func (z *ZkServer) SubHandle(info Info_in) error {
 //zkserver让broker准备好topic/sub和config    //Pub版
 func (z *ZkServer) HandStartGetBroker(info Info_in) (rets []byte, size int, err error) {
 	var Parts []zookeeper.Part
-	/*
-		检查该应户是否订阅了该topic/partition
-		......
-	*/
+
+	// 检查该应户是否订阅了该topic/partition
 	z.zk.CheckSub(zookeeper.StartGetInfo{
 		Cli_name:      info.cli_name,
 		Topic_name:    info.topic_name,
@@ -589,4 +596,49 @@ func (z *ZkServer) CloseAcceptPartition(topicname, partname, brokername string, 
 	z.mu.RUnlock()
 
 	return NewFileName
+}
+
+func (z *ZkServer) GetNewLeader(info Info_in) (Info_out, error) {
+	block_path := z.zk.TopicRoot + "/" + info.topic_name + "/" + "partitions" + "/" + info.part_name + "/" + info.blockname
+
+	BlockNode := z.zk.GetBlockNode(block_path)
+	var LeaderBroker zookeeper.BrokerNode
+	//需要检查Leader是否在线，若不在线需要更换leader
+	broker_path := z.zk.BrokerRoot + "/" + BlockNode.LeaderBroker
+	ret := z.zk.CheckBroker(broker_path)
+	if ret {
+		LeaderBroker = z.zk.GetBrokerNode(BlockNode.LeaderBroker)
+	}else{
+		//检查副本中谁的最新，再次检查
+		var array []struct{
+			EndIndex int64
+			BrokerName string
+		}
+		Dups := z.zk.GetDuplicateNodes(info.topic_name, info.part_name, info.blockname)
+		for _, dup := range Dups {
+			str := z.zk.BrokerRoot + "/" + dup.BrokerName
+			ret = z.zk.CheckBroker(str)
+			if ret {
+				//根据EndIndex的大小排序
+				array = append(array, struct{EndIndex int64; BrokerName string}{dup.EndOffset, dup.BrokerName})
+			}
+		}
+
+		sort.SliceStable(array, func(i, j int)bool{
+			return array[i].EndIndex > array[j].EndIndex
+		})
+
+		for _, arr := range array {
+			LeaderBroker = z.zk.GetBrokerNode(arr.BrokerName)
+			ret = z.zk.CheckBroker(z.zk.BrokerRoot + "/" + arr.BrokerName)
+			if ret {
+				break
+			}
+		}
+	}
+
+	return Info_out{
+		broker_name:   LeaderBroker.Name,
+		bro_host_port: LeaderBroker.HostPort,
+	}, nil
 }
