@@ -1,48 +1,40 @@
 package main
 
 import (
-	"ClyMQ/kitex_gen/api/server_operations"
 	"fmt"
 
 	"testing"
 	"time"
 
-	client3 "ClyMQ/client/clients"
-
-	client2 "github.com/cloudwego/kitex/client"
 )
 
-//测试该测试点需要将MQServer启动
-func TestProducerNet(t *testing.T) {
+func TestProducerCreate(t *testing.T) {
 
-	fmt.Println("Test: Producer net")
+	fmt.Println("Test: producer Create Topic and Partition")
 
-	port := ":7778"
-	rpcserver := NewBrokerAndStart(t, port)
+	zkServer := StartZKServer(t)
+	time.Sleep(1*time.Second)
 
-	time.Sleep(2*time.Second)
+	brokers := StartBrokers(t, 3)
+	time.Sleep(1*time.Second)
 
-	client, err := server_operations.NewClient("client", client2.WithHostPorts("0.0.0.0"+port))
+	producer := NewProducerAndStart(t, ":7878", "producer1")
+	time.Sleep(1*time.Second)
 
+
+	fmt.Println("Producer Create a Topic")
+	err := producer.CreateTopic("phone_number")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal(err.Error())
 	}
 
-	producer := client3.Producer{}
-	producer.Name = client3.GetIpport() + "producter_test1"
-	producer.Cli = client
-
-	err = producer.Push(client3.Message{
-		Topic_name: "phone_number",
-		Part_name:  "ycl",
-		Msg:        "18788888888",
-	})
-
+	fmt.Println("Producer Create a Topic/Partition")
+	err = producer.CreatePart("phone_number", "xian")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal(err.Error())
 	}
 
-	rpcserver.ShutDown_server()
-	
+	ShutDownBrokers(brokers)
+	ShutDownZKServer(zkServer)
 	fmt.Println("  ... Passed")
 }

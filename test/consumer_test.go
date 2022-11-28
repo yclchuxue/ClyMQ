@@ -1,37 +1,39 @@
 package main
 
 import (
-	"ClyMQ/kitex_gen/api"
-	"context"
 	"fmt"
 	"time"
 
 	"testing"
 )
 
-func TestConsumerNet(t *testing.T) {
+const (
+	PTP = 1
+	PSB = 3
+)
 
-	fmt.Println("Test: consumer net")
+func TestConsumer1(t *testing.T) {
 
-	server_port := ":7778"
-	consumer_port := ":8000"
-	rpcserver := NewBrokerAndStart(t, server_port)
+	fmt.Println("Test: consumer Subscription")
 
-	consumer := NewConsumerAndStart(t, server_port, consumer_port)
+	zkServer := StartZKServer(t)
+	time.Sleep(1*time.Second)
 
-	info := &api.InfoRequest{
-		IpPort: "0.0.0.0" + consumer_port,
-	}
+	brokers := StartBrokers(t, 3)
+	time.Sleep(1*time.Second)
 
-	time.Sleep(3*time.Second)
+	consumer := NewConsumerAndStart(t, ":7881", ":7878", "consumer1")
+	time.Sleep(1*time.Second)
 
-	resp, err := consumer.Cli.Info(context.Background(), info)
+
+	fmt.Println("Consumer Sub a Topic")
+	err := consumer.Subscription("phone_number", "北京", PTP)
 	if err != nil {
-		fmt.Println(resp)
+		t.Fatal(err.Error())
 	}
 
 	consumer.ShutDown_server()
-	rpcserver.ShutDown_server()
-
+	ShutDownBrokers(brokers)
+	ShutDownZKServer(zkServer)
 	fmt.Println("  ... Passed")
 }
