@@ -38,7 +38,6 @@ func NewConsumer(zkbroker string, name string, port string) (*Consumer, error) {
 		Brokers: make(map[string]server_operations.Client),
 		// Topic_Partions: make(map[string]Info),
 	}
-
 	var err error
 	C.zkBroker, err = zkserver_operations.NewClient(C.Name, client.WithHostPorts(zkbroker))
 
@@ -53,6 +52,7 @@ func (c *Consumer) Alive() string {
 }
 
 func (c *Consumer) Start_server() {
+	// fmt.Println("port is ", c.port)
 	addr, _ := net.ResolveTCPAddr("tcp", c.port)
 	var opts []server.Option
 	opts = append(opts, server.WithServiceAddr(addr))
@@ -165,6 +165,8 @@ func (c *Consumer) StartGetToBroker(parts []PartKey, info Info) (ret string, err
 				bro_cli.StarttoGet(context.Background(), rep)
 			}
 		}
+		//发送info
+		c.SendInfo(c.port, &bro_cli)
 
 		if info.Option == 3 { //psb
 			bro_cli.StarttoGet(context.Background(), rep)

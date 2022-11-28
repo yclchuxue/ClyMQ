@@ -1,0 +1,32 @@
+Test: consumer Subscription
+Start ZKServer
+LOG1 ZkServer start rpcserver for brokers
+2022/11/27 22:18:22.620761 server.go:81: [Info] KITEX: server listen at addr=[::]:8888
+connected to 127.0.0.1:2181
+authenticated: id=72057594568966178, timeout=20000
+re-submitting `0` credentials after reconnect
+Start Brokers
+2022/11/27 22:18:23.623872 server.go:79: [Error] KITEX: server listen failed, addr=<nil> error=listen ip: unknown network ip
+2022/11/27 22:18:23.623978 server.go:214: [Error] KITEX: server start error: error=listen ip: unknown network ip
+ERRO listen ip: unknown network ip2022/11/27 22:18:23.624061 server.go:79: [Error] KITEX: server listen failed, addr=<nil> error=listen ip: unknown network ip
+2022/11/27 22:18:23.624170 server.go:214: [Error] KITEX: server start error: error=listen ip: unknown network ip
+ERRO listen ip: unknown network ip2022/11/27 22:18:23.624064 server.go:79: [Error] KITEX: server listen failed, addr=<nil> error=listen ip: unknown network ip
+connected to 127.0.0.1:2181
+2022/11/27 22:18:23.624350 server.go:214: [Error] KITEX: server start error: error=listen ip: unknown network ip
+ERRO listen ip: unknown network ipconnected to 127.0.0.1:2181
+connected to 127.0.0.1:2181
+authenticated: id=72057594568966179, timeout=20000
+re-submitting `0` credentials after reconnect
+authenticated: id=72057594568966180, timeout=20000
+re-submitting `0` credentials after reconnect
+authenticated: id=72057594568966181, timeout=20000
+re-submitting `0` credentials after reconnect
+ERRO zk: node does not existERRO zk: node does not existERRO zk: node does not existERRO no more instances to retry: last error: remote or network error: get connection error: dial tcp :7878: connection has been closed by peerLOG1 Broker start rpcserver for clients
+2022/11/27 22:18:23.640341 server.go:81: [Info] KITEX: server listen at addr=[::]:7772
+ERRO no more instances to retry: last error: remote or network error: get connection error: dial tcp :7878: connection has been closed by peerLOG1 Broker start rpcserver for clients
+2022/11/27 22:18:23.640741 server.go:81: [Info] KITEX: server listen at addr=[::]:7773
+ERRO no more instances to retry: last error: remote or network error: get connection error: dial tcp :7878: connection has been closed by peerLOG1 Broker start rpcserver for clients
+2022/11/27 22:18:23.642308 server.go:81: [Info] KITEX: server listen at addr=[::]:7771
+  ... Passed
+PASS
+ok  	ClyMQ/test	5.009s
