@@ -20,8 +20,12 @@ const (
 
 	TOPIC_NIL_PSB = 10
 
+	VERTUAL_1  = 1
 	VERTUAL_10 = 10
 	VERTUAL_20 = 20
+	VERTUAL_30 = 30
+	VERTUAL_40 = 40
+	VERTUAL_50 = 50
 
 	OFFSET = 0
 )
@@ -43,7 +47,7 @@ func NewTopic(topic_name string) *Topic {
 		Files:   make(map[string]*File),
 	}
 	str, _ := os.Getwd()
-	str += "/" + name + "/" + topic_name
+	str += "/" + Name + "/" + topic_name
 	CreateList(str) //若存在，则不会创建
 
 	return topic
@@ -59,7 +63,7 @@ func (t *Topic) PrepareAcceptHandle(in info) (ret string, err error) {
 
 	//设置partition中的file和fd，start_index等信息
 	str, _ := os.Getwd()
-	str += "/" + name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
+	str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
 	file, fd, Err, err := NewFile(str)
 	if err != nil {
 		return Err, err
@@ -89,7 +93,7 @@ func (t *Topic) CloseAcceptPart(in info) (start, end int64, ret string, err erro
 		DEBUG(dError, err.Error())
 	} else {
 		str, _ := os.Getwd()
-		str += "/" + name + "/" + in.topic_name + "/" + in.part_name + "/"
+		str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/"
 		t.rmu.Lock()
 		t.Files[str+in.new_name] = t.Files[str+in.file_name]
 		delete(t.Files, str+in.file_name)
@@ -111,7 +115,7 @@ func (t *Topic) PrepareSendHandle(in info, zkclient *zkserver_operations.Client)
 
 	//检查文件是否存在, 若存在为获得File则创建File,若没有则返回错误.
 	str, _ := os.Getwd()
-	str += "/" + name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
+	str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
 	file, ok := t.Files[str]
 	if !ok {
 		file, fd, Err, err := CheckFile(str)
@@ -173,7 +177,7 @@ func (t *Topic) HandleParttitions(Partitions map[string]ParNodeInfo) {
 func (t *Topic) GetFile(in info) *File {
 	t.rmu.Lock()
 	str, _ := os.Getwd()
-	str += "/" + name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
+	str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
 	File, ok := t.Files[str]
 	if !ok {
 		file, fd, Err, err := NewFile(str)
@@ -214,7 +218,7 @@ func (t *Topic) addMessage(in info) error {
 
 	part.mu.Unlock()
 
-	part.addMessage(in)
+	part.AddMessage(in)
 
 	return nil
 }
@@ -308,7 +312,7 @@ func NewPartition(topic_name, part_name string) *Partition {
 	}
 
 	str, _ := os.Getwd()
-	str += "/" + name + "/" + topic_name + "/" + part_name
+	str += "/" + Name + "/" + topic_name + "/" + part_name
 	CreateList(str) //若存在，则不会创建
 
 	return part
@@ -319,12 +323,12 @@ func (p *Partition) StartGetMessage(file *File, fd *os.File, in info) string {
 	defer p.mu.Unlock()
 	ret := ""
 	switch p.state {
-	case START:
+	case ALIVE:
 		ret = ErrHadStart
 	case CLOSE:
-		p.queue = make([]Message, 50)
+		// p.queue = make([]Message, 0)
 
-		p.state = START
+		p.state = ALIVE
 		p.file = file
 		p.fd = fd
 		p.file_name = in.file_name
@@ -340,9 +344,9 @@ func (p *Partition) CloseAcceptMessage(in info) (start, end int64, ret string, e
 	defer p.mu.Unlock()
 	if p.state == ALIVE {
 		str, _ := os.Getwd()
-		str += "/" + name + "/" + in.topic_name + "/" + in.part_name
+		str += "/" + Name + "/" + in.topic_name + "/" + in.part_name
+		err = p.file.Update(str, in.new_name) //修改本地文件名
 		p.file_name = in.new_name
-		p.file.Update(str, in.new_name) //修改本地文件名
 		p.state = DOWN
 		end = p.index
 		start = p.file.GetFirstIndex(p.fd)
@@ -352,6 +356,7 @@ func (p *Partition) CloseAcceptMessage(in info) (start, end int64, ret string, e
 		DEBUG(dLog, "%v\n", ret)
 		err = errors.New(ret)
 	}
+	// DEBUG(dLog, "partition state is %v and err %v\n", p.state, err)
 	return start, end, ret, err
 }
 
@@ -368,9 +373,14 @@ func (p *Partition) GetFile() *File {
 	return p.file
 }
 
+// use test
+// func (p *Partition)GetQueue() []Message {
+// 	return p.queue
+// }
+
 //检查state
 //当接收数据达到一定数量将修改zookeeper上的index
-func (p *Partition) addMessage(in info) (ret string, err error) {
+func (p *Partition) AddMessage(in info) (ret string, err error) {
 	p.mu.Lock()
 	if p.state == DOWN {
 		ret = "this partition close accept"
@@ -385,7 +395,7 @@ func (p *Partition) addMessage(in info) (ret string, err error) {
 		Part_name:  in.part_name,
 		Msg:        in.message,
 	}
-	DEBUG(dLog, "part_name %v add message index is %v\n", p.key, p.index)
+	// DEBUG(dLog, "part_name %v add message %v index is %v\n", p.key, msg, p.index)
 
 	//判断需要的ack，
 
@@ -395,20 +405,22 @@ func (p *Partition) addMessage(in info) (ret string, err error) {
 	if p.index-p.start_index >= VERTUAL_10 {
 		var msg []Message
 		for i := 0; i < VERTUAL_10; i++ {
+			// DEBUG(dLog, "append msg(%v) to msgs\n", p.queue[i])
 			msg = append(msg, p.queue[i])
 		}
 
 		node := Key{
 			Start_index: p.start_index,
-			End_index:   p.start_index + VERTUAL_10,
+			End_index:   p.start_index + VERTUAL_10 - 1,
 		}
-
+		
 		data_msg, err := json.Marshal(msg)
 		if err != nil {
 			DEBUG(dError, "%v turn json fail\n", msg)
 		}
 		node.Size = len(data_msg)
 
+		// DEBUG(dLog, "need write msgs size is (%v)\n", node.Size)
 		if !p.file.WriteFile(p.fd, node, data_msg) {
 			DEBUG(dError, "write to %v faile\n", p.file_name)
 		}
@@ -569,7 +581,7 @@ func (s *SubScription) AddConsumerInConfig(in info, cli *client_operations.Clien
 	switch in.option {
 	case TOPIC_NIL_PTP_PUSH:
 
-		s.PTP_config.AddCli(in.part_name, in.consumer, cli) //向config中ADD consumer
+		s.PTP_config.AddCli(in.consumer, cli) //向config中ADD consumer
 	case TOPIC_KEY_PSB_PUSH:
 
 		config, ok := s.PSB_configs[in.part_name+in.consumer]
@@ -613,9 +625,8 @@ func (s *SubScription) PullMsgs(in info) (MSGS, error) {
 type Config struct {
 	mu sync.RWMutex
 
-	part_num int  //partition数
-	cons_num int  //consumer 数
-	node_con bool //node 为 consumer
+	part_num int //partition数
+	cons_num int //consumer 数
 
 	part_close chan *Part
 
@@ -636,7 +647,6 @@ func NewConfig(topic_name string, part_num int, partitions map[string]*Partition
 		mu:       sync.RWMutex{},
 		part_num: part_num,
 		cons_num: 0,
-		node_con: true,
 
 		part_close: make(chan *Part),
 
@@ -661,31 +671,21 @@ func (c *Config) GetCloseChan(ch chan *Part) {
 }
 
 //向Clis加入此consumer的句柄，重新负载均衡，并修改Parts中的clis数组
-func (c *Config) AddCli(part_name string, cli_name string, cli *client_operations.Client) {
+func (c *Config) AddCli(cli_name string, cli *client_operations.Client) {
 	c.mu.Lock()
-
-	//consumer > part_num first
-	if c.cons_num+1 > c.part_num && c.node_con {
-		c.node_con = false
-
-		// node from consumer to partition
-		c.consistent = TurnConsistent(GetPartitionArray(c.Partitions))
-	}
 
 	c.cons_num++
 	c.Clis[cli_name] = cli
 
-	if c.node_con { //consumer is node
-		err := c.consistent.Add(cli_name)
-		if err != nil {
-			DEBUG(dError, err.Error())
-		}
+	err := c.consistent.Add(cli_name)
+	if err != nil {
+		DEBUG(dError, err.Error())
 	}
-	c.mu.Unlock()
 
+	c.mu.Unlock()
+	// DEBUG(dLog, "add client need rebalance\n")
 	c.RebalancePtoC() //更新配置
 	c.UpdateParts()   //应用配置
-
 }
 
 func (c *Config) DeleteCli(part_name string, cli_name string) {
@@ -694,17 +694,8 @@ func (c *Config) DeleteCli(part_name string, cli_name string) {
 	c.cons_num--
 	delete(c.Clis, cli_name)
 
-	if c.cons_num <= c.part_num && !c.node_con {
-		c.node_con = true
-
-		// node from partition to consumer
-		c.consistent = TurnConsistent(GetConsumerArray(c.Clis))
-	}
-
-	if c.node_con { //consumer is node
-		err := c.consistent.Reduce(cli_name)
-		DEBUG(dError, err.Error())
-	}
+	err := c.consistent.Reduce(cli_name)
+	DEBUG(dError, err.Error())
 
 	c.mu.Unlock()
 
@@ -722,24 +713,10 @@ func (c *Config) DeleteCli(part_name string, cli_name string) {
 func (c *Config) AddPartition(in info, partition *Partition, file *File, zkclient *zkserver_operations.Client) error {
 	c.mu.Lock()
 
-	if c.cons_num < c.part_num+1 && !c.node_con {
-		c.node_con = true
-
-		//node from partition to consumer
-		c.consistent = TurnConsistent(GetConsumerArray(c.Clis))
-	}
-
 	c.part_num++
 	c.Partitions[in.part_name] = partition
 	c.Files[file.filename] = file
 
-	if !c.node_con {
-		err := c.consistent.Add(in.part_name)
-		if err != nil {
-			DEBUG(dError, err.Error())
-			return err
-		}
-	}
 	c.parts[in.part_name] = NewPart(in, file, zkclient)
 	c.parts[in.part_name].Start(c.part_close)
 	c.mu.Unlock()
@@ -757,12 +734,6 @@ func (c *Config) DeletePartition(part_name string, file *File) {
 	delete(c.Partitions, part_name)
 	delete(c.Files, file.filename)
 
-	if c.cons_num > c.part_num && c.node_con {
-		c.node_con = false
-
-		c.consistent = TurnConsistent(GetPartitionArray(c.Partitions))
-	}
-
 	//该Part协程已经关闭，该partition的文件已经消费完毕，
 	c.mu.Unlock()
 
@@ -771,33 +742,50 @@ func (c *Config) DeletePartition(part_name string, file *File) {
 }
 
 //负载均衡，将调整后的配置存入PartToCon
+//将Consisitent中的ConH置false, 循环两次Partitions
+//第一次拿取 1个 Consumer
+//第二次拿取 靠前的 ConH 为 true 的 Consumer
+//直到遇到ConH为 false 的
 func (c *Config) RebalancePtoC() {
-	c.mu.Lock()
+
+	c.consistent.SetFreeNode()   //将空闲节点设为len(consumers)
+	c.consistent.TurnZero()		 //将conusmer全设为空闲
 
 	parttocon := make(map[string][]string)
 
-	if c.node_con { // node is consumer
-		for name := range c.Partitions {
-			node := c.consistent.GetNode(name)
-			var array []string
-			array, ok := parttocon[name]
-			array = append(array, node)
-			if !ok {
-				parttocon[name] = array
-			}
-		}
-	} else { // node is partition
-		for name := range c.Clis {
-			node := c.consistent.GetNode(name)
-			var array []string
-			array, ok := parttocon[node]
-			array = append(array, name)
-			if !ok {
-				parttocon[node] = array
-			}
+	c.mu.RLock()
+	Parts := c.Partitions
+	c.mu.RUnlock()
+
+	for name := range Parts {
+		node := c.consistent.GetNode(name)
+		var array []string
+		array, ok := parttocon[name]
+		array = append(array, node)
+		if !ok {
+			parttocon[name] = array
 		}
 	}
 
+	for {
+		for name := range Parts {
+			if c.consistent.GetFreeNodeNum() > 0{
+				node := c.consistent.GetNodeFree(name)
+				var array []string
+				array, ok := parttocon[name]
+				array = append(array, node)
+				if !ok {
+					parttocon[name] = array
+				}
+			}else{
+				break
+			}
+		}
+		if c.consistent.GetFreeNodeNum() <= 0{
+			break
+		}
+	}
+	c.mu.Lock()
 	c.PartToCon = parttocon
 	c.mu.Unlock()
 }
@@ -820,6 +808,10 @@ type Consistent struct {
 	// 已绑定的consumer为true
 	nodes map[string]bool
 
+	// cconsumer以负责一个Partition则为true
+	ConH     map[string]bool
+	FreeNode int
+
 	mu sync.RWMutex
 	//虚拟节点个数
 	vertualNodeCount int
@@ -830,6 +822,8 @@ func NewConsistent() *Consistent {
 		hashSortedNodes:  make([]uint32, 2),
 		circle:           make(map[uint32]string),
 		nodes:            make(map[string]bool),
+		ConH:             make(map[string]bool),
+		FreeNode:         0,
 		mu:               sync.RWMutex{},
 		vertualNodeCount: VERTUAL_10,
 	}
@@ -837,6 +831,7 @@ func NewConsistent() *Consistent {
 	return con
 }
 
+// not used
 func GetPartitionArray(partitions map[string]*Partition) []string {
 	var array []string
 
@@ -847,6 +842,7 @@ func GetPartitionArray(partitions map[string]*Partition) []string {
 	return array
 }
 
+// not used
 func GetConsumerArray(consumers map[string]*client_operations.Client) []string {
 	var array []string
 
@@ -857,6 +853,7 @@ func GetConsumerArray(consumers map[string]*client_operations.Client) []string {
 	return array
 }
 
+// not used
 func TurnConsistent(nodes []string) *Consistent {
 	newconsistent := NewConsistent()
 
@@ -865,6 +862,20 @@ func TurnConsistent(nodes []string) *Consistent {
 	}
 
 	return newconsistent
+}
+
+func (c *Consistent) SetFreeNode() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.FreeNode = len(c.ConH)
+}
+
+func (c *Consistent) GetFreeNodeNum() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.FreeNode
 }
 
 func (c *Consistent) hashKey(key string) uint32 {
@@ -884,6 +895,7 @@ func (c *Consistent) Add(node string) error {
 		return errors.New("node already existed")
 	}
 	c.nodes[node] = true
+	c.ConH[node] = false
 
 	for i := 0; i < c.vertualNodeCount; i++ {
 		virtualKey := c.hashKey(node + strconv.Itoa(i))
@@ -909,7 +921,9 @@ func (c *Consistent) Reduce(node string) error {
 		// fmt.Println("node already existed")
 		return errors.New("node already delete")
 	}
-	c.nodes[node] = false
+	// c.nodes[node] = false
+	delete(c.nodes, node)
+	delete(c.ConH, node)
 
 	for i := 0; i < c.vertualNodeCount; i++ {
 		virtualKey := c.hashKey(node + strconv.Itoa(i))
@@ -930,15 +944,52 @@ func (c *Consistent) Reduce(node string) error {
 	return nil
 }
 
+func (c *Consistent) TurnZero() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for key := range c.ConH {
+		c.ConH[key] = false
+	}
+}
+
 // return consumer name
 func (c *Consistent) GetNode(key string) string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	hash := c.hashKey(key)
 	i := c.getPosition(hash)
 
-	return c.circle[c.hashSortedNodes[i]]
+	con := c.circle[c.hashSortedNodes[i]]
+
+	c.ConH[con] = true
+	c.FreeNode--
+
+	return con
+}
+
+func (c *Consistent) GetNodeFree(key string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	hash := c.hashKey(key)
+	i := c.getPosition(hash)
+
+	i += 1
+	for {
+		if i == len(c.hashSortedNodes)-1 {
+			i = 0
+		}
+		con := c.circle[c.hashSortedNodes[i]]
+		// fmt.Println("Free Node nums is ", c.FreeNode)
+		if !c.ConH[con] {
+			c.ConH[con] = true
+			c.FreeNode--
+			return con
+		}
+		i++
+	}
 }
 
 func (c *Consistent) getPosition(hash uint32) int {
