@@ -19,8 +19,8 @@ import (
 type RPCServer struct {
 	// me int64
 	// name 			string
-	srv_cli  server.Server
-	srv_bro  server.Server
+	srv_cli  *server.Server
+	srv_bro  *server.Server
 	zkinfo   zookeeper.ZkInfo
 	server   *Server
 	zkserver *ZkServer
@@ -33,21 +33,32 @@ func NewRpcServer(zkinfo zookeeper.ZkInfo) RPCServer {
 	}
 }
 
-func (s *RPCServer) Start(opts_cli, opts_zks []server.Option, opt Options) error {
+func (s *RPCServer) Start(opts_cli, opts_zks, opts_raf []server.Option, opt Options) error {
 
 	switch opt.Tag {
 	case BROKER:
 		s.server = NewServer(s.zkinfo)
-		s.server.make(opt)
+		s.server.make(opt, opts_raf)
+
+		srv_cli_bro := server_operations.NewServer(s, opts_cli...)
+		s.srv_cli = &srv_cli_bro
+		DEBUG(dLog, "Broker start rpcserver for clients\n")
+		go func() {
+			err := srv_cli_bro.Run()
+
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+		}()
 	case ZKBROKER:
 		s.zkserver = NewZKServer(s.zkinfo)
 		s.zkserver.make(opt)
 
-		srv_bro := zkserver_operations.NewServer(s, opts_zks...)
-		s.srv_bro = srv_bro
+		srv_bro_cli := zkserver_operations.NewServer(s, opts_zks...)
+		s.srv_bro = &srv_bro_cli
 		DEBUG(dLog, "ZkServer start rpcserver for brokers\n")
 		go func() {
-			err := srv_bro.Run()
+			err := srv_bro_cli.Run()
 
 			if err != nil {
 				fmt.Println(err.Error())
@@ -55,23 +66,17 @@ func (s *RPCServer) Start(opts_cli, opts_zks []server.Option, opt Options) error
 		}()
 	}
 
-	srv_cli := server_operations.NewServer(s, opts_cli...)
-	s.srv_cli = srv_cli
-	DEBUG(dLog, "Broker start rpcserver for clients\n")
-	go func() {
-		err := srv_cli.Run()
-
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-	}()
-
 	return nil
 }
 
 func (s *RPCServer) ShutDown_server() {
-	s.srv_cli.Stop()
-	s.srv_bro.Stop()
+	if s.srv_bro != nil {
+		(*s.srv_bro).Stop()
+	}
+	if s.srv_cli != nil {
+		(*s.srv_cli).Stop()
+	}
+
 }
 
 //producer--->broker server
@@ -83,8 +88,8 @@ func (s *RPCServer) Push(ctx context.Context, req *api.PushRequest) (resp *api.P
 		part_name:  req.Key,
 		// startIndex: req.StartIndex,
 		// endIndex:   req.EndIndex,
-		message:    req.Message,
-		size:       req.Size,
+		message: req.Message,
+		size:    req.Size,
 	})
 
 	if err != nil {
@@ -193,7 +198,7 @@ func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest
 
 //先在zookeeper上创建一个Partition，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
 func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) (r *api.CreatePartResponse, err error) {
-	info := s.zkserver.CreateTopic(Info_in{
+	info := s.zkserver.CreatePart(Info_in{
 		topic_name: req.TopicName,
 		part_name:  req.PartName,
 	})
@@ -386,9 +391,9 @@ func (s *RPCServer) CloseAccept(ctx context.Context, req *api.CloseAcceptRequest
 	}
 
 	return &api.CloseAcceptResponse{
-		Ret: true,
+		Ret:        true,
 		Startindex: start,
-		Endindex: end,
+		Endindex:   end,
 	}, nil
 }
 
@@ -418,15 +423,15 @@ func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest
 
 func (s *RPCServer) BecomeLeader(ctx context.Context, req *api.BecomeLeaderRequest) (r *api.BecomeLeaderResponse, err error) {
 	err = s.zkserver.BecomeLeader(Info_in{
-		cli_name: req.Broker,
+		cli_name:   req.Broker,
 		topic_name: req.Topic,
-		part_name: req.Partition,
+		part_name:  req.Partition,
 	})
 	if err != nil {
 		return &api.BecomeLeaderResponse{
 			Ret: false,
 		}, err
-	}else{
+	} else {
 		return &api.BecomeLeaderResponse{
 			Ret: true,
 		}, nil
@@ -436,19 +441,19 @@ func (s *RPCServer) BecomeLeader(ctx context.Context, req *api.BecomeLeaderReque
 func (s *RPCServer) GetNewLeader(ctx context.Context, req *api.GetNewLeaderRequest) (r *api.GetNewLeaderResponse, err error) {
 	info, err := s.zkserver.GetNewLeader(Info_in{
 		topic_name: req.TopicName,
-		part_name: req.PartName,
-		blockname: req.BlockName,
+		part_name:  req.PartName,
+		blockname:  req.BlockName,
 	})
 
 	if err != nil {
 		return &api.GetNewLeaderResponse{
 			Ret: false,
 		}, err
-	}else{
+	} else {
 		return &api.GetNewLeaderResponse{
-			Ret: true,
+			Ret:          true,
 			LeaderBroker: info.broker_name,
-			HostPort: info.bro_host_port,
+			HostPort:     info.bro_host_port,
 		}, nil
 	}
 }
