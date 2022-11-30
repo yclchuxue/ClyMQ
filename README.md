@@ -7,6 +7,8 @@ kitex -module ClyMQ -service ClyMQ raftoperations.thrift
 ```
 执行上述命令，生成kitex RPC
 
+若kitex生成的代码报错，则将go.mod中的github.com/apache/thrift v0.13.0，该成13版本
+
 ```
 sh build.sh
 ```
