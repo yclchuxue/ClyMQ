@@ -101,6 +101,7 @@ func (z *ZK) RegisterNode(znode interface{}) (err error) {
 	var pnode PartitionNode
 	var blnode BlockNode
 	var dnode DuplicateNode
+	var snode SubscriptionNode
 
 	i := reflect.TypeOf(znode)
 	switch i.Name() {
@@ -114,30 +115,63 @@ func (z *ZK) RegisterNode(znode interface{}) (err error) {
 		data, err = json.Marshal(tnode)
 	case "PartitionNode":
 		pnode = znode.(PartitionNode)
-		path += z.TopicRoot + "/" + pnode.TopicName + "/" + pnode.Name
+		path += z.TopicRoot + "/" + pnode.TopicName + "/Partitions/" + pnode.Name
 		data, err = json.Marshal(pnode)
+	case "SubscriptionNode":
+		snode = znode.(SubscriptionNode)
+		path += z.TopicRoot + "/" + snode.TopicName + "/Subscriptions/" + snode.Name
 	case "BlockNode":
 		blnode = znode.(BlockNode)
-		path += z.TopicRoot + "/" + blnode.TopicName + "/" + blnode.PartitionName + "/" + blnode.Name
+		path += z.TopicRoot + "/" + blnode.TopicName + "/Partitions/" + blnode.PartitionName + "/" + blnode.Name
 		data, err = json.Marshal(blnode)
 	case "DuplicateNode":
 		dnode = znode.(DuplicateNode)
-		path += z.TopicRoot + "/" + dnode.TopicName + "/" + dnode.PartitionName + "/" + dnode.BlockName + "/" + dnode.Name
+		path += z.TopicRoot + "/" + dnode.TopicName + "/Partitions/" + dnode.PartitionName + "/" + dnode.BlockName + "/" + dnode.Name
 		data, err = json.Marshal(dnode)
 	}
 
 	if err != nil {
+		fmt.Println("the node ", path, " turn json fail", err.Error())
 		return err
 	}
-
+	// fmt.Println("Create a node is ", path, i.Name())
 	ok, _, err := z.conn.Exists(path)
 	if ok {
+		fmt.Println("the node ", path, " had in zookeeper")
 		return err
 	}
 
 	_, err = z.conn.Create(path, data, 0, zk.WorldACL(zk.PermAll))
 	if err != nil {
+		fmt.Println("the node ", path, " Creaate fail ", err.Error())
 		return err
+	}
+
+	if i.Name() == "TopicNode" {
+		//创建Partitions和Subscriptions
+		partitions_path := path + "/" + "Partitions"
+		ok, _, err = z.conn.Exists(partitions_path)
+		if ok {
+			fmt.Println("the node ", partitions_path, " had in zookeeper")
+			return err
+		}
+		_, err = z.conn.Create(partitions_path, nil, 0, zk.WorldACL(zk.PermAll))
+		if err != nil {
+			fmt.Println("the node ", partitions_path, " Creaate fail")
+			return err
+		}
+
+		subscription_apth := path + "/" + "Subscriptions"
+		ok, _, err = z.conn.Exists(subscription_apth)
+		if ok {
+			fmt.Println("the node ", subscription_apth, " had in zookeeper")
+			return err
+		}
+		_, err = z.conn.Create(subscription_apth, nil, 0, zk.WorldACL(zk.PermAll))
+		if err != nil {
+			fmt.Println("the node ", subscription_apth, " Creaate fail")
+			return err
+		}
 	}
 
 	return nil
