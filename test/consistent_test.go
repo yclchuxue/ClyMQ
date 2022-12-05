@@ -39,7 +39,7 @@ func TestConsistent1(t *testing.T) {
 	consistent := server.NewConsistent()
 
 	for _, name := range consumers {
-		consistent.Add(name)
+		consistent.Add(name, 1)
 	}
 	
 	consistent.SetFreeNode()
@@ -89,7 +89,7 @@ func TestConsistent2(t *testing.T) {
 	consistent := server.NewConsistent()
 
 	for _, name := range consumers {
-		consistent.Add(name)
+		consistent.Add(name, 1)
 	}
 	consistent.SetFreeNode()
 	// fmt.Println("Free Node Now nums is ", consistent.GetFreeNodeNum())
