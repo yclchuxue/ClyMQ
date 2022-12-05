@@ -14,14 +14,15 @@ import (
 	"sync"
 
 	"github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/server"
 )
 
 var (
-	name string
+	Name string
 )
 
 const (
-	NODE_SIZE = 42
+	NODE_SIZE = 24
 )
 
 type Server struct {
@@ -44,7 +45,7 @@ type Server struct {
 }
 
 type Key struct {
-	Size        int   `json:"size"`
+	Size        int64   `json:"size"`
 	Start_index int64 `json:"start_index"`
 	End_index   int64 `json:"end_index"`
 }
@@ -107,7 +108,7 @@ func NewServer(zkinfo zookeeper.ZkInfo) *Server {
 	}
 }
 
-func (s *Server) make(opt Options) {
+func (s *Server) make(opt Options, opt_cli []server.Option) {
 
 	s.consumers = make(map[string]*Client)
 	s.topics = make(map[string]*Topic)
@@ -118,11 +119,11 @@ func (s *Server) make(opt Options) {
 
 	s.CheckList()
 	s.Name = opt.Name
-	name = opt.Name
+	Name = opt.Name
 
 	//本地创建parts——raft，为raft同步做准备
 	s.parts_rafts = NewParts_Raft()
-	go s.parts_rafts.make(opt.Name, opt.Raft_Host_Port, s.aplych)
+	go s.parts_rafts.make(opt.Name, opt_cli, s.aplych)
 
 	//在zookeeper上创建一个永久节点, 若存在则不需要创建
 	err := s.zk.RegisterNode(zookeeper.BrokerNode{
@@ -242,7 +243,7 @@ func (s *Server) HandleTopics(Topics map[string]TopNodeInfo) {
 
 func (s *Server) CheckList() {
 	str, _ := os.Getwd()
-	str += "/" + name
+	str += "/" + Name
 	ret := CheckFileOrList(str)
 	// DEBUG(dLog, "Check list %v is %v\n", str, ret)
 	if !ret {
@@ -665,7 +666,7 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 				node := Key{
 					Start_index: resp.StartIndex,
 					End_index:   resp.EndIndex,
-					Size:        len(resp.Msgs),
+					Size:        int64(len(resp.Msgs)),
 				}
 
 				File.WriteFile(fd, node, resp.Msgs)

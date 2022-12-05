@@ -522,7 +522,7 @@ func (no *Node) ReadMSGS(in info) (MSGS, error) {
 	}
 	nums := 0
 	for nums < int(in.size) {
-		node, msg, err := no.file.ReadByte(&no.fd, no.offset)
+		node, msg, err := no.file.ReadBytes(&no.fd, no.offset)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -535,7 +535,7 @@ func (no *Node) ReadMSGS(in info) (MSGS, error) {
 			msgs.start_index = node.Start_index
 			msgs.end_index   = node.End_index
 		}
-		nums += node.Size
+		nums += int(node.Size)
 		no.offset += int64(NODE_SIZE) + int64(node.Size)
 		msgs.size = int8(nums)
 		msgs.array = append(msgs.array, msg...)
