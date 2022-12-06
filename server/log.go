@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -53,18 +55,31 @@ func LOGinit() {
 	debugVerbosity = getVerbosity()
 	debugStart = time.Now()
 
-	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
+	// log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
+
+	// log.SetPrefix("【ClyMQ】")
+	log.SetFlags(log.LstdFlags | log.Lshortfile |log.LUTC)
+	
 	mu.Unlock()
 }
 
 func DEBUG(topic logTopic, format string, a ...interface{}) {
+	// pc, file, lineNo, ok := runtime.Caller(1)
+	_, file, lineNo, ok := runtime.Caller(1)
+
+	if !ok {
+		log.Println("runtime.Caller() failed")
+	}
+	// funcName := runtime.FuncForPC(pc).Name()
+	fileName := path.Base(file) // Base函数返回路径的最后一个元素
+
 	if 3 >= 1 {
 		mu.Lock()
 		// time := time.Since(debugStart).Microseconds()
 		// time = time / 100
 		// prefix := fmt.Sprintf("%06d %v ", time, string(topic))
 		prefix := fmt.Sprintf("%v ", string(topic))
-		format = prefix + format
+		format = prefix + fileName + " line: " + strconv.Itoa(lineNo) + " " + format
 		fmt.Printf(format, a...)
 		mu.Unlock()
 	}
