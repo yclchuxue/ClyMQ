@@ -123,3 +123,37 @@ func TestConsistent2(t *testing.T) {
 
 	fmt.Println("  ... Passed")
 }
+
+func TestConsistentBro1(t *testing.T) {
+	fmt.Println("Test: ConsistentBro ")
+
+	dup_num := 3
+	topic_name := "phone_number"
+	partitions := []string{"xian", "shanghai", "beijing"}
+	brokers  := []string{"Broker0", "Broker1", "Broker2"}
+
+	// partitions := []string{"123", "124", "125"}
+	// consumers  := []string{"consumer1", "consumer2", "consumer3", "consumer4", "consumer5"}
+
+	// PartToBro := make(map[string][]string)
+
+	fmt.Println("----node is brokers")
+	consistent := server.NewConsistentBro()
+
+	for _, name := range brokers {
+		consistent.Add(name, 1)
+	}
+
+	dups := make(map[string]bool)
+	str := topic_name + partitions[0]
+	Bro_dups := consistent.GetNode(str, dup_num)
+	// fmt.Println(Bro_dup_1)
+	for _, name := range Bro_dups {
+		dups[name] = true
+	} 
+	if len(dups) != dup_num{
+		t.Fatal("get dup brokers ", len(dups), " != ", dup_num)
+	}
+	
+	fmt.Println("  ... Passed")
+}
