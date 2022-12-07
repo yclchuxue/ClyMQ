@@ -1,6 +1,7 @@
 package server
 
 import (
+	"ClyMQ/logger"
 	"ClyMQ/kitex_gen/api/client_operations"
 	"ClyMQ/kitex_gen/api/zkserver_operations"
 	"encoding/json"
@@ -72,9 +73,9 @@ func (t *Topic) PrepareAcceptHandle(in info) (ret string, err error) {
 	t.rmu.Unlock()
 	ret = partition.StartGetMessage(file, fd, in)
 	if ret == OK {
-		DEBUG(dLog, "topic(%v)_partition(%v) Start success\n", in.topic_name, in.part_name)
+		logger.DEBUG(logger.DLog, "topic(%v)_partition(%v) Start success\n", in.topic_name, in.part_name)
 	} else {
-		DEBUG(dLog, "topic(%v)_partition(%v) Had Started\n", in.topic_name, in.part_name)
+		logger.DEBUG(logger.DLog, "topic(%v)_partition(%v) Had Started\n", in.topic_name, in.part_name)
 	}
 	return ret, nil
 }
@@ -85,12 +86,12 @@ func (t *Topic) CloseAcceptPart(in info) (start, end int64, ret string, err erro
 	t.rmu.RUnlock()
 	if !ok {
 		ret = "this partition is not in this broker"
-		DEBUG(dError, "this partition(%v) is not in this broker\n", in.part_name)
+		logger.DEBUG(logger.DError, "this partition(%v) is not in this broker\n", in.part_name)
 		return 0, 0, ret, errors.New(ret)
 	}
 	start, end, ret, err = partition.CloseAcceptMessage(in)
 	if err != nil {
-		DEBUG(dError, err.Error())
+		logger.DEBUG(logger.DError, err.Error())
 	} else {
 		str, _ := os.Getwd()
 		str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/"
@@ -152,7 +153,7 @@ func (t *Topic) HandleStartToGet(sub_name string, in info, cli *client_operation
 	sub, ok := t.subList[sub_name]
 	if !ok {
 		ret := "this topic not have this subscription"
-		DEBUG(dError, "%v\n", ret)
+		logger.DEBUG(logger.DError, "%v\n", ret)
 		return errors.New(ret)
 	}
 	sub.AddConsumerInConfig(in, cli)
@@ -169,7 +170,7 @@ func (t *Topic) HandleParttitions(Partitions map[string]ParNodeInfo) {
 
 			t.Parts[part_name] = part
 		} else {
-			DEBUG(dWarn, "This topic(%v) part(%v) had in s.topics\n", t.Name, part_name)
+			logger.DEBUG(logger.DWarn, "This topic(%v) part(%v) had in s.topics\n", t.Name, part_name)
 		}
 	}
 }
@@ -182,7 +183,7 @@ func (t *Topic) GetFile(in info) *File {
 	if !ok {
 		file, fd, Err, err := NewFile(str)
 		if err != nil {
-			DEBUG(dError, "Err(%v), err(%v)", Err, err.Error())
+			logger.DEBUG(logger.DError, "Err(%v), err(%v)", Err, err.Error())
 			return nil
 		}
 		fd.Close()
@@ -207,14 +208,14 @@ func (t *Topic) AddPartition(part_name string) {
 func (t *Topic) addMessage(in info) error {
 	part, ok := t.Parts[in.part_name]
 	if !ok {
-		DEBUG(dError, "not find this part in add message\n")
+		logger.DEBUG(logger.DError, "not find this part in add message\n")
 		part := NewPartition(in.topic_name, in.part_name) // new a Parition //需要向sub中和config中加入一个partition
 		// t.Files[req.key] = file
 		t.Parts[in.part_name] = part
 	}
-	DEBUG(dLog, "add before lock in topic addmsg\n")
+	logger.DEBUG(logger.DLog, "add before lock in topic addmsg\n")
 	part.mu.Lock()
-	DEBUG(dLog, "add had lock in topic addmsg\n")
+	logger.DEBUG(logger.DLog, "add had lock in topic addmsg\n")
 
 	part.mu.Unlock()
 
@@ -229,7 +230,7 @@ func (t *Topic) PullMessage(in info) (MSGS, error) {
 	sub, ok := t.subList[sub_name]
 	t.rmu.RUnlock()
 	if !ok {
-		DEBUG(dError, "this topic is not have sub(%v)\n", sub_name)
+		logger.DEBUG(logger.DError, "this topic is not have sub(%v)\n", sub_name)
 		return MSGS{}, errors.New("this topic is not have this sub")
 	}
 
@@ -353,10 +354,10 @@ func (p *Partition) CloseAcceptMessage(in info) (start, end int64, ret string, e
 		p.fd.Close()
 	} else if p.state == DOWN {
 		ret = "this partition had close"
-		DEBUG(dLog, "%v\n", ret)
+		logger.DEBUG(logger.DLog, "%v\n", ret)
 		err = errors.New(ret)
 	}
-	// DEBUG(dLog, "partition state is %v and err %v\n", p.state, err)
+	// logger.DEBUG(logger.DLog, "partition state is %v and err %v\n", p.state, err)
 	return start, end, ret, err
 }
 
@@ -384,7 +385,7 @@ func (p *Partition) AddMessage(in info) (ret string, err error) {
 	p.mu.Lock()
 	if p.state == DOWN {
 		ret = "this partition close accept"
-		DEBUG(dLog, "%v\n", ret)
+		logger.DEBUG(logger.DLog, "%v\n", ret)
 		return ret, errors.New(ret)
 	}
 	p.index++
@@ -395,7 +396,7 @@ func (p *Partition) AddMessage(in info) (ret string, err error) {
 		Part_name:  in.part_name,
 		Msg:        in.message,
 	}
-	// DEBUG(dLog, "part_name %v add message %v index is %v\n", p.key, msg, p.index)
+	// logger.DEBUG(logger.DLog, "part_name %v add message %v index is %v\n", p.key, msg, p.index)
 
 	//判断需要的ack，
 
@@ -405,7 +406,7 @@ func (p *Partition) AddMessage(in info) (ret string, err error) {
 	if p.index-p.start_index >= VERTUAL_10 {
 		var msg []Message
 		for i := 0; i < VERTUAL_10; i++ {
-			// DEBUG(dLog, "append msg(%v) to msgs\n", p.queue[i])
+			// logger.DEBUG(logger.DLog, "append msg(%v) to msgs\n", p.queue[i])
 			msg = append(msg, p.queue[i])
 		}
 
@@ -416,13 +417,13 @@ func (p *Partition) AddMessage(in info) (ret string, err error) {
 		
 		data_msg, err := json.Marshal(msg)
 		if err != nil {
-			DEBUG(dError, "%v turn json fail\n", msg)
+			logger.DEBUG(logger.DError, "%v turn json fail\n", msg)
 		}
 		node.Size = int64(len(data_msg))
 
-		// DEBUG(dLog, "need write msgs size is (%v)\n", node.Size)
+		// logger.DEBUG(logger.DLog, "need write msgs size is (%v)\n", node.Size)
 		if !p.file.WriteFile(p.fd, node, data_msg) {
-			DEBUG(dError, "write to %v faile\n", p.file_name)
+			logger.DEBUG(logger.DError, "write to %v faile\n", p.file_name)
 		}
 		p.start_index += VERTUAL_10 + 1
 		p.queue = p.queue[VERTUAL_10:]
@@ -500,7 +501,7 @@ func (s *SubScription) AddPSBConfig(in info, part_name string, file *File, zkcli
 		config := NewPSBConfigPush(in, file, zkclient)
 		s.PSB_configs[part_name+in.consumer] = config
 	} else {
-		DEBUG(dLog, "This PSB has Start\n")
+		logger.DEBUG(logger.DLog, "This PSB has Start\n")
 	}
 
 	s.rmu.Unlock()
@@ -586,7 +587,7 @@ func (s *SubScription) AddConsumerInConfig(in info, cli *client_operations.Clien
 
 		config, ok := s.PSB_configs[in.part_name+in.consumer]
 		if !ok {
-			DEBUG(dError, "this PSBconfig PUSH id not been\n")
+			logger.DEBUG(logger.DError, "this PSBconfig PUSH id not been\n")
 		}
 		config.Start(in, cli)
 	}
@@ -616,7 +617,7 @@ func (s *SubScription) PullMsgs(in info) (MSGS, error) {
 	node, ok := s.nodes[node_name]
 	s.rmu.RUnlock()
 	if !ok {
-		DEBUG(dError, "this sub has not have this node(%v)\n", node_name)
+		logger.DEBUG(logger.DError, "this sub has not have this node(%v)\n", node_name)
 		return MSGS{}, errors.New("this sub has not have this node")
 	}
 	return node.ReadMSGS(in)
@@ -679,11 +680,11 @@ func (c *Config) AddCli(cli_name string, cli *client_operations.Client) {
 
 	err := c.consistent.Add(cli_name, 1)
 	if err != nil {
-		DEBUG(dError, err.Error())
+		logger.DEBUG(logger.DError, err.Error())
 	}
 
 	c.mu.Unlock()
-	// DEBUG(dLog, "add client need rebalance\n")
+	// logger.DEBUG(logger.DLog, "add client need rebalance\n")
 	c.RebalancePtoC() //更新配置
 	c.UpdateParts()   //应用配置
 }
@@ -695,7 +696,7 @@ func (c *Config) DeleteCli(part_name string, cli_name string) {
 	delete(c.Clis, cli_name)
 
 	err := c.consistent.Reduce(cli_name)
-	DEBUG(dError, err.Error())
+	logger.DEBUG(logger.DError, err.Error())
 
 	c.mu.Unlock()
 

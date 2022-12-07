@@ -2,6 +2,7 @@ package server
 
 import (
 	"ClyMQ/kitex_gen/api/client_operations"
+	"ClyMQ/logger"
 	"net"
 	"os"
 	"runtime"
@@ -13,6 +14,7 @@ type PartKey struct {
 
 //初始化Broker时的信息
 type Options struct {
+	Me 				   int
 	Name               string
 	Tag                string
 	Zkserver_Host_Port string
@@ -53,7 +55,8 @@ type BloNodeInfo struct {
 }
 
 type BrokerS struct {
-	Brokers map[string]string `json:"brokers"`
+	BroBrokers map[string]string `json:"brobrokers"`
+	RafBrokers map[string]string `json:"rafbrokers"`
 }
 
 const (
@@ -94,7 +97,7 @@ func CreateList(path string) error {
 		err := os.Mkdir(path, 0775)
 		if err != nil {
 			_, file, line, _ := runtime.Caller(1)
-			DEBUG(dError, "%v:%v mkdir %v error %v\n", file, line, path, err.Error())
+			logger.DEBUG(logger.DError, "%v:%v mkdir %v error %v\n", file, line, path, err.Error())
 		}
 	}
 
@@ -202,4 +205,8 @@ func GetInfo(in Info) info {
 		LeaderBroker: in.LeaderBroker,
 		HostPort:     in.HostPort,
 	}
+}
+
+func GetServerInfoAply() (chan info) {
+	return make(chan info)
 }
