@@ -1,9 +1,10 @@
 package zookeeper
 
 import (
+	"ClyMQ/logger"
 	"encoding/json"
+
 	// "fmt"
-	"log"
 	"reflect"
 	"time"
 
@@ -28,7 +29,7 @@ type ZkInfo struct {
 func NewZK(info ZkInfo) *ZK {
 	coon, _, err := zk.Connect(info.HostPorts, time.Duration(info.Timeout)*time.Second)
 	if err != nil {
-		log.Println(err.Error())
+		logger.DEBUG(logger.DError, err.Error())
 	}
 	return &ZK{
 		conn:       coon,
@@ -39,9 +40,11 @@ func NewZK(info ZkInfo) *ZK {
 }
 
 type BrokerNode struct {
-	Name     string `json:"name"`
-	HostPort string `json:"hostPort"`
-	Pnum     int    `json:"pNum"`
+	Name         string `json:"name"`
+	BrokHostPort string `json:"brokhostport"`
+	RaftHostPort string `json:"rafthostport"`
+	Me 			 int 	`json:"me"`
+	Pnum         int    `json:"pNum"`
 	//一些负载情况
 }
 
@@ -132,20 +135,22 @@ func (z *ZK) RegisterNode(znode interface{}) (err error) {
 	}
 
 	if err != nil {
-		log.Println("the node ", path, " turn json fail", err.Error())
+		logger.DEBUG(logger.DError, "the node %v turn json fail%v\n", path, err.Error())
 		return err
 	}
-	// log.Println("Create a node is ", path, i.Name())
-	ok, _, err := z.conn.Exists(path)
+	// logger.DEBUG(logger.DError, "Create a node is ", path, i.Name())
+	ok, _, _ := z.conn.Exists(path)
 	if ok {
-		log.Println("the node ", path, " had in zookeeper")
-		return err
-	}
-
-	_, err = z.conn.Create(path, data, 0, zk.WorldACL(zk.PermAll))
-	if err != nil {
-		log.Println("the node ", path, " Creaate fail ", err.Error())
-		return err
+		logger.DEBUG(logger.DLog, "the node %v had in zookeeper\n", path)
+		_, sate, _ := z.conn.Get(path)
+		z.conn.Set(path, data, sate.Version)
+		// return err
+	} else {
+		_, err = z.conn.Create(path, data, 0, zk.WorldACL(zk.PermAll))
+		if err != nil {
+			logger.DEBUG(logger.DError, "the node %v Creaate fail %v\n", path, err.Error())
+			return err
+		}
 	}
 
 	if i.Name() == "TopicNode" {
@@ -153,24 +158,24 @@ func (z *ZK) RegisterNode(znode interface{}) (err error) {
 		partitions_path := path + "/" + "Partitions"
 		ok, _, err = z.conn.Exists(partitions_path)
 		if ok {
-			log.Println("the node ", partitions_path, " had in zookeeper")
+			logger.DEBUG(logger.DLog, "the node %v had in zookeeper\n", partitions_path)
 			return err
 		}
 		_, err = z.conn.Create(partitions_path, nil, 0, zk.WorldACL(zk.PermAll))
 		if err != nil {
-			log.Println("the node ", partitions_path, " Creaate fail")
+			logger.DEBUG(logger.DError, "the node %v Creaate fail\n", partitions_path)
 			return err
 		}
 
 		subscription_apth := path + "/" + "Subscriptions"
 		ok, _, err = z.conn.Exists(subscription_apth)
 		if ok {
-			log.Println("the node ", subscription_apth, " had in zookeeper")
+			logger.DEBUG(logger.DLog, "the node %v had in zookeeper\n", subscription_apth)
 			return err
 		}
 		_, err = z.conn.Create(subscription_apth, nil, 0, zk.WorldACL(zk.PermAll))
 		if err != nil {
-			log.Println("the node ", subscription_apth, " Creaate fail")
+			logger.DEBUG(logger.DError, "the node %v Creaate fail\n", subscription_apth)
 			return err
 		}
 	}
@@ -225,7 +230,7 @@ func (z *ZK) GetPartState(topic_name, part_name string) (PartitionNode, error) {
 		return node, err
 	}
 	data, _, _ := z.conn.Get(path)
-	
+
 	json.Unmarshal(data, &node)
 
 	return node, nil
@@ -234,7 +239,8 @@ func (z *ZK) GetPartState(topic_name, part_name string) (PartitionNode, error) {
 func (z *ZK) CreateState(name string) error {
 	path := z.BrokerRoot + "/" + name + "/state"
 	ok, _, err := z.conn.Exists(path)
-	if !ok {
+	logger.DEBUG(logger.DLog, "create broker state %v ok %v\n", path, ok)
+	if ok {
 		return err
 	}
 	_, err = z.conn.Create(path, nil, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
@@ -245,13 +251,14 @@ func (z *ZK) CreateState(name string) error {
 }
 
 type Part struct {
-	Topic_name string
-	Part_name  string
-	BrokerName string
-	Host_Port  string
-	PTP_index  int64
-	File_name  string
-	Err        string
+	Topic_name    string
+	Part_name     string
+	BrokerName    string
+	BrokHost_Port string
+	RaftHost_Port string
+	PTP_index     int64
+	File_name     string
+	Err           string
 }
 
 //检查broker是否在线
@@ -271,7 +278,7 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 	ok, _, err := z.conn.Exists(path)
 
 	if !ok || err != nil {
-		log.Println(err.Error())
+		logger.DEBUG(logger.DError, err.Error())
 		return nil, err
 	}
 	var Parts []Part
@@ -281,7 +288,7 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 
 		PNode, err := z.GetPartitionNode(path + "/" + part)
 		if err != nil {
-			log.Println("get PartitionNode fail", path, "/", part)
+			logger.DEBUG(logger.DError, "get PartitionNode fail%v/%v\n", path, part)
 			return nil, err
 		}
 		PTP_index := PNode.PTPoffset
@@ -292,7 +299,7 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 		for _, block := range blocks {
 			info, err := z.GetBlockNode(path + "/" + part + "/" + block)
 			if err != nil {
-				log.Println("get block node fail ", part, "/" + part, "/", block) 
+				logger.DEBUG(logger.DError, "get block node fail%v/%v/%v\n", part, part, block)
 				continue
 			}
 			if info.StartOffset <= PTP_index && info.EndOffset >= PTP_index {
@@ -302,7 +309,7 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 
 					duplicatenode, err := z.GetDuplicateNode(path + "/" + part + "/" + info.Name + "/" + duplicate)
 					if err != nil {
-						log.Println("get dup node fail ", path, "/", part, "/", info.Name, "/" + duplicate)
+						logger.DEBUG(logger.DError, "get dup node fail%v/%v/%v/%v\n", path, part, info.Name, duplicate)
 						continue
 					}
 					if max_dup.EndOffset == 0 || max_dup.EndOffset <= duplicatenode.EndOffset {
@@ -321,17 +328,18 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 				//一个partition只取endoffset最大的broker,其他小的broker副本不全面
 				broker, err := z.GetBrokerNode(max_dup.BrokerName)
 				if err != nil {
-					log.Println("get broker node fail ", max_dup.BlockName)
+					logger.DEBUG(logger.DError, "get broker node fail %v\n", max_dup.BlockName)
 					continue
 				}
 				Parts = append(Parts, Part{
-					Topic_name: topic,
-					Part_name:  part,
-					BrokerName: broker.Name,
-					Host_Port:  broker.HostPort,
-					PTP_index:  PTP_index,
-					File_name:  info.FileName,
-					Err:        ret,
+					Topic_name:    topic,
+					Part_name:     part,
+					BrokerName:    broker.Name,
+					BrokHost_Port: broker.BrokHostPort,
+					RaftHost_Port: broker.RaftHostPort,
+					PTP_index:     PTP_index,
+					File_name:     info.FileName,
+					Err:           ret,
 				})
 				break
 			}
@@ -345,7 +353,7 @@ func (z *ZK) GetBroker(topic, part string, offset int64) (parts []Part, err erro
 	part_path := z.TopicRoot + "/" + topic + "/Partitions/" + part
 	ok, _, err := z.conn.Exists(part_path)
 	if !ok || err != nil {
-		log.Println(err.Error())
+		logger.DEBUG(logger.DError, "%v\n", err.Error())
 		return nil, err
 	}
 
@@ -355,7 +363,7 @@ func (z *ZK) GetBroker(topic, part string, offset int64) (parts []Part, err erro
 	for _, block := range blocks {
 		info, err := z.GetBlockNode(part_path + "/" + block)
 		if err != nil {
-			log.Println("get block node fail ", part_path, "/", block)
+			logger.DEBUG(logger.DError, "get block node fail %v/%v\n", part_path, block)
 			continue
 		}
 
@@ -366,7 +374,7 @@ func (z *ZK) GetBroker(topic, part string, offset int64) (parts []Part, err erro
 
 				duplicatenode, err := z.GetDuplicateNode(part_path + "/" + block + "/" + duplicate)
 				if err != nil {
-					log.Println("get dup node fail ", part_path , "/" , block , "/" , duplicate)
+					logger.DEBUG(logger.DError, "get dup node fail %v/%v/%v\n", part_path, block, duplicate)
 				}
 				if max_dup.EndOffset == 0 || max_dup.EndOffset <= duplicatenode.EndOffset {
 					//保证broker在线
@@ -384,16 +392,17 @@ func (z *ZK) GetBroker(topic, part string, offset int64) (parts []Part, err erro
 			//一个partition只取endoffset最大的broker,其他小的broker副本不全面
 			broker, err := z.GetBrokerNode(max_dup.BrokerName)
 			if err != nil {
-				log.Println("get Broker node fail ", max_dup.BlockName)
+				logger.DEBUG(logger.DError, "get Broker node fail %v\n", max_dup.BlockName)
 				continue
 			}
 			parts = append(parts, Part{
-				Topic_name: topic,
-				Part_name:  part,
-				BrokerName: broker.Name,
-				Host_Port:  broker.HostPort,
-				File_name:  info.FileName,
-				Err:        ret,
+				Topic_name:    topic,
+				Part_name:     part,
+				BrokerName:    broker.Name,
+				BrokHost_Port: broker.BrokHostPort,
+				RaftHost_Port: broker.RaftHostPort,
+				File_name:     info.FileName,
+				Err:           ret,
 			})
 			break
 		}
@@ -416,25 +425,27 @@ func (z *ZK) CheckSub(info StartGetInfo) bool {
 }
 
 //若Leader不在线，则等待一秒继续请求
-func (z *ZK) GetPartNowBrokerNode(topic_name, part_name string) (BrokerNode, BlockNode, error) {
+func (z *ZK) GetPartNowBrokerNode(topic_name, part_name string) (BrokerNode, BlockNode, int8, error) {
 	now_block_path := z.TopicRoot + "/" + topic_name + "/" + "Partitions" + "/" + part_name + "/" + "NowBlock"
 	for {
 		NowBlock, err := z.GetBlockNode(now_block_path)
-		if err != nil{
-			log.Println("get block node fail, path ", now_block_path, "err is ", err.Error())
-			return BrokerNode{}, BlockNode{}, err
+		if err != nil {
+			logger.DEBUG(logger.DError, "get block node fail, path %v err is %v\n", now_block_path, err.Error())
+			return BrokerNode{}, BlockNode{}, 0, err
 		}
+
 		Broker, err := z.GetBrokerNode(NowBlock.LeaderBroker)
 		if err != nil {
-			log.Println("get broker node fail, Name ", NowBlock.LeaderBroker, "err is ", err.Error())
-			return BrokerNode{}, BlockNode{}, err
+			logger.DEBUG(logger.DError, "get broker node fail, Name %v err is %v\n", NowBlock.LeaderBroker, err.Error())
+			return BrokerNode{}, NowBlock, 1, err
 		}
-		log.Println("the Leader Broker is ", NowBlock.LeaderBroker)
+		logger.DEBUG(logger.DLog, "the Leader Broker is %v\n", NowBlock.LeaderBroker)
 		ret := z.CheckBroker(z.BrokerRoot + "/" + Broker.Name)
-		log.Println("the broker ", Broker.Name, "is not online")
+		
 		if ret {
-			return Broker, NowBlock, nil
+			return Broker, NowBlock, 2, nil
 		} else {
+			logger.DEBUG(logger.DLog, "the broker %v is not online\n", Broker.Name)
 			time.Sleep(time.Second * 1)
 		}
 	}
@@ -483,7 +494,7 @@ func (z *ZK) GetBlockNode(path string) (BlockNode, error) {
 	var blocknode BlockNode
 	data, _, err := z.conn.Get(path)
 	if err != nil {
-		log.Println("the block path is ", path, " err is", err.Error())
+		logger.DEBUG(logger.DError, "the block path is %v err is %v\n", path, err.Error())
 		return blocknode, err
 	}
 	json.Unmarshal(data, &blocknode)
@@ -498,7 +509,7 @@ func (z *ZK) GetDuplicateNodes(topic_name, part_name, block_name string) (nodes 
 	for _, dup_name := range Dups {
 		DupNode, err := z.GetDuplicateNode(BlockPath + "/" + dup_name)
 		if err != nil {
-			log.Println("the dup ", BlockPath+"/"+dup_name, "is not exits")
+			logger.DEBUG(logger.DError, "the dup %v/%vis not exits\n", BlockPath, dup_name)
 		} else {
 			nodes = append(nodes, DupNode)
 		}
@@ -553,7 +564,7 @@ func (z *ZK) GetPartBlockIndex(TopicName, PartName string) (int64, error) {
 	str := z.TopicRoot + "/" + TopicName + "/" + "Partitions" + "/" + PartName
 	node, err := z.GetPartitionNode(str)
 	if err != nil {
-		log.Println("get partition node fail path is ", str, "err is ", err.Error())
+		logger.DEBUG(logger.DError, "get partition node fail path is %v err is %v\n", str, err.Error())
 		return 0, err
 	}
 
