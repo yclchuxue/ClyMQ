@@ -87,6 +87,7 @@ func StartBrokers(t *testing.T, numbers int) (brokers []*Server.RPCServer) {
 			Timeout:   20,
 			Root:      "/ClyMQ",
 		}, Server.Options{
+			Me:  			  index,	
 			Name:             "Broker" + strconv.Itoa(index),
 			Tag:              "broker",
 			Broker_Host_Port: server_ports[index],
