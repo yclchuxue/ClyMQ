@@ -91,6 +91,7 @@ func (s *RPCServer) Push(ctx context.Context, req *api.PushRequest) (resp *api.P
 		part_name:  req.Key,
 		// startIndex: req.StartIndex,
 		// endIndex:   req.EndIndex,
+		ack:        req.Ack,
 		message: req.Message,
 		size:    req.Size,
 	})
@@ -355,7 +356,7 @@ func (s *RPCServer) PrepareState(ctx context.Context, req *api.PrepareStateReque
 	var Brokers BrokerS
 	json.Unmarshal(req.Brokers, &Brokers)
 
-	ret, err := s.server.PrepareAcceptHandle(info{
+	ret, err := s.server.PrepareState(info{
 		topic_name: req.TopicName,
 		part_name:  req.PartName,
 		option:     req.State,
@@ -474,6 +475,7 @@ func (s *RPCServer) AddRaftPartition(ctx context.Context, req *api.AddRaftPartit
 		topic_name: req.TopicName,
 		part_name:  req.PartName,
 		brokers:    Brokers.RafBrokers,
+		brok_me:    Brokers.Me_Brokers,
 	})
 	if err != nil {
 		return &api.AddRaftPartitionResponse{

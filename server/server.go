@@ -88,6 +88,7 @@ type info struct {
 
 	//raft
 	brokers map[string]string
+	brok_me map[string]int
 	me      int
 
 	//fetch
@@ -126,11 +127,13 @@ func (s *Server) make(opt Options, opt_cli []server.Option) {
 
 	//本地创建parts——raft，为raft同步做准备
 	s.parts_rafts = NewParts_Raft()
-	go s.parts_rafts.Make(opt.Name, opt_cli, s.aplych)
+	go s.parts_rafts.Make(opt.Name, opt_cli, s.aplych, s.me)
+	s.parts_rafts.StartServer()
 
 	//在zookeeper上创建一个永久节点, 若存在则不需要创建
 	err := s.zk.RegisterNode(zookeeper.BrokerNode{
-		Name:     s.Name,
+		Name:         s.Name,
+		Me:           s.me,
 		BrokHostPort: opt.Broker_Host_Port,
 		RaftHostPort: opt.Raft_Host_Port,
 	})
@@ -169,19 +172,22 @@ func (s *Server) make(opt Options, opt_cli []server.Option) {
 func (s *Server) GetApplych(applych chan info) {
 
 	for msg := range applych {
-		s.mu.RLock()
-		topic, ok := s.topics[msg.topic_name]
-		s.mu.RUnlock()
 
-		if !ok {
-			logger.DEBUG(logger.DError, "topic(%v) is not in this broker\n", msg.topic_name)
+		if msg.producer == "Leader" {
+			s.BecomeLeader(msg) //成为leader
 		} else {
-			if msg.producer == "Leader" {
-				s.BecomeLeader(msg)
+			s.mu.RLock()
+			topic, ok := s.topics[msg.topic_name]
+			s.mu.RUnlock()
+			
+			logger.DEBUG(logger.DLog, "the message from applych is %v\n", msg)
+			if !ok {
+				logger.DEBUG(logger.DError, "topic(%v) is not in this broker\n", msg.topic_name)
 			} else {
-				topic.addMessage(msg)
+				topic.addMessage(msg) //信息同步
 			}
 		}
+
 	}
 }
 
@@ -258,6 +264,23 @@ const (
 	ErrHadStart = "this partition had Start"
 )
 
+func (s *Server) PrepareState(in info) (ret string, err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	switch in.option {
+	case -1:
+		ok := s.parts_rafts.CheckPartState(in.topic_name, in.part_name)
+		if !ok {
+			ret = "the raft not exits"
+			err = errors.New(ret)
+		}
+	default:
+
+	}
+
+	return ret, err
+}
+
 // PrepareAcceptHandle
 //准备接收信息，
 //检查topic和partition是否存在，不存在则需要创建，
@@ -314,37 +337,39 @@ func (s *Server) AddRaftHandle(in info) (ret string, err error) {
 	logger.DEBUG(logger.DLog, "the raft brokers is %v\n", in.brokers)
 
 	s.mu.Lock()
-	Me := 0
+	// Me := 0
 	index := 0
+	nodes := make(map[int]string)
+	for k, v := range in.brok_me {
+		nodes[v] = k
+	}
+
 	var peers []*raft_operations.Client
-	for k, v := range in.brokers {
-		logger.DEBUG(logger.DLog, "%v index (%v)  Me(%v)   k(%v) == Name(%v)\n", s.Name, index, Me, k, s.Name)
-		if Me == 0 && k == s.Name {
-			Me = index
-		}
-
-		index++
-
-		bro_cli, ok := s.brokers[k]
+	for index < len(in.brokers) {
+		logger.DEBUG(logger.DLog, "%v index (%v)  Me(%v)   k(%v) == Name(%v)\n", s.Name, index, index, nodes[index], s.Name)
+		// if Me == 0 && k == s.Name {
+		// 	Me = index
+		// }
+		bro_cli, ok := s.brokers[nodes[index]]
 		if !ok {
-			cli, err := raft_operations.NewClient(s.Name, client.WithHostPorts(v))
+			cli, err := raft_operations.NewClient(s.Name, client.WithHostPorts(in.brokers[nodes[index]]))
 			if err != nil {
 				logger.DEBUG(logger.DError, "%v new raft client fail err %v\n", s.Name, err.Error())
 				return ret, err
 			}
-			s.brokers[k] = &cli
+			s.brokers[nodes[index]] = &cli
 			bro_cli = &cli
-			logger.DEBUG(logger.DLog, "%v New client to broker %v\n", s.Name, k)
-		}else{
-			logger.DEBUG(logger.DLog, "%v had client to broker %v\n", s.Name, k)
+			logger.DEBUG(logger.DLog, "%v New client to broker %v\n", s.Name, nodes[index])
+		} else {
+			logger.DEBUG(logger.DLog, "%v had client to broker %v\n", s.Name, nodes[index])
 		}
 		peers = append(peers, bro_cli)
-
+		index++
 	}
 
-	logger.DEBUG(logger.DLog, "the Broker %v raft Me %v\n", s.Name, Me)
+	logger.DEBUG(logger.DLog, "the Broker %v raft Me %v\n", s.Name, s.me)
 	//检查或创建底层part_raft
-	s.parts_rafts.AddPart_Raft(peers, Me, in.topic_name, in.part_name, s.aplych)
+	s.parts_rafts.AddPart_Raft(peers, s.me, in.topic_name, in.part_name, s.aplych)
 
 	s.mu.Unlock()
 

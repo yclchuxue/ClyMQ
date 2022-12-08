@@ -57,6 +57,7 @@ type BloNodeInfo struct {
 type BrokerS struct {
 	BroBrokers map[string]string `json:"brobrokers"`
 	RafBrokers map[string]string `json:"rafbrokers"`
+	Me_Brokers map[string]int    `json:"mebrokers"`
 }
 
 const (

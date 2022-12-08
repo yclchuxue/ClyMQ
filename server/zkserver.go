@@ -548,6 +548,7 @@ func (z *ZkServer) GetDupsFromConsist(info Info_in) (Dups []zookeeper.DuplicateN
 	var brokers BrokerS
 	brokers.BroBrokers = make(map[string]string)
 	brokers.RafBrokers = make(map[string]string)
+	brokers.Me_Brokers = make(map[string]int)
 	for _, DupNode := range Dups {
 		BrokerNode, err := z.zk.GetBrokerNode(DupNode.BrokerName)
 		if err != nil {
@@ -555,6 +556,7 @@ func (z *ZkServer) GetDupsFromConsist(info Info_in) (Dups []zookeeper.DuplicateN
 		}
 		brokers.BroBrokers[DupNode.BrokerName] = BrokerNode.BrokHostPort
 		brokers.RafBrokers[DupNode.BrokerName] = BrokerNode.RaftHostPort
+		brokers.Me_Brokers[DupNode.BrokerName] = BrokerNode.Me
 	}
 
 	data_brokers, err := json.Marshal(brokers)
@@ -566,17 +568,18 @@ func (z *ZkServer) GetDupsFromConsist(info Info_in) (Dups []zookeeper.DuplicateN
 }
 
 func (z *ZkServer) CreateNowBlock(info Info_in) error {
-	brock_node := zookeeper.BlockNode{
+	block_node := zookeeper.BlockNode{
 		Name:          "NowBlock",
 		FileName:      info.topic_name + info.part_name + "now.txt",
 		TopicName:     info.topic_name,
 		PartitionName: info.part_name,
 		StartOffset:   int64(0),
 	}
-	return z.zk.RegisterNode(brock_node)
+	return z.zk.RegisterNode(block_node)
 }
 
 func (z *ZkServer) BecomeLeader(info Info_in) error {
+	logger.DEBUG(logger.DLeader, "partition(%v) new leader is %v\n", info.topic_name+info.part_name, info.cli_name)
 	now_block_path := z.zk.TopicRoot + "/" + info.topic_name + "/" + "Partitions" + "/" + info.part_name + "/" + "NowBlock"
 	NowBlock, err := z.zk.GetBlockNode(now_block_path)
 	if err != nil {
