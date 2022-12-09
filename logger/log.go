@@ -95,7 +95,7 @@ func DEBUG_RAFT(topic logTopic, format string, a ...interface{}) {
 	// funcName := runtime.FuncForPC(pc).Name()
 	fileName := path.Base(file) // Base函数返回路径的最后一个元素
 
-	if 3 >= 1 {
+	if 0 >= 1 {
 		mu.Lock()
 		// time := time.Since(debugStart).Microseconds()
 		// time = time / 100
