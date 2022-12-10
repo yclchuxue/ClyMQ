@@ -9,6 +9,7 @@ struct PushRequest {
     6: i64    EndIndex
     7: i8     Size
     8: i8     Ack
+    9: i64    Cmdindex
 }
 
 struct PushResponse {
