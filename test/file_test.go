@@ -10,7 +10,7 @@ import (
 
 func TestFile1(t *testing.T) {
 	fmt.Println("Test: File WriteFile and FindOffset and ReadFile")
-	server.Name = "Broker"
+	// server.Name = "Broker"
 	topic_name := "phone_number"
 	part_name := "xian"
 	filename := "NowBlock.txt"
@@ -79,7 +79,7 @@ func TestFile1(t *testing.T) {
 
 func TestFile2(t *testing.T) {
 	fmt.Println("Test: File WriteFile and FindOffset and ReadBytes")
-	server.Name = "Broker"
+	// server.Name = "Broker"
 	topic_name := "phone_number"
 	part_name := "xian"
 	filename := "NowBlock.txt"

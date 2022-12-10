@@ -16,7 +16,7 @@ func TestConfigPTPConsistent(t *testing.T) {
 	partitions := []string{"xian", "shanghai", "beijing"}
 	consumers := []string{"consumer1", "consumer2", "consumer3", "consumer4", "consumer5"}
 
-	server.Name = "Broker"
+	// server.Name = "Broker"
 	str, _ := os.Getwd()
 	var cli *client_operations.Client
 	Parts := make(map[string]*server.Partition)
@@ -25,7 +25,7 @@ func TestConfigPTPConsistent(t *testing.T) {
 	for _, name := range partitions {
 		path := str + "/" + "Broker" + "/" + topic + "/" + name + "/" + "NowBlock.txt"
 
-		Parts[name] = server.NewPartition(topic, name)
+		Parts[name] = server.NewPartition("Broker", topic, name)
 		file, _, _, err := server.NewFile(path)
 		if err != nil {
 			t.Fatal(err.Error())
