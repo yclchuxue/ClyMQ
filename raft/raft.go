@@ -989,7 +989,7 @@ func (rf *Raft) requestvotes(term int) {
 
 							//成为Leader将修改zookeeper上的信息
 							go rf.Start(Op{
-								Cli_index: "Leader",
+								Cli_name: "Leader",
 								Topic: rf.topic_name,
 								Tpart: rf.topic_name+rf.part_name,
 								Part: rf.part_name,
@@ -1066,7 +1066,7 @@ func (rf *Raft) ticker() {
 
 
 type Op struct {
-	Cli_index string //client的唯一标识
+	Cli_name string //client的唯一标识
 	Cmd_index int64  //操作id号
 	Ser_index int64  //Server的id
 	Operate   string //这里的操作只有append
