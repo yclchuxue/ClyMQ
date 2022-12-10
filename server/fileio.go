@@ -1,8 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"ClyMQ/logger"
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -30,6 +30,8 @@ func NewFile(path_name string) (file *File, fd *os.File, Err string, err error) 
 			Err = "CreatFileFail"
 			logger.DEBUG(logger.DError, err.Error())
 			return nil, nil, Err, err
+		}else{
+			logger.DEBUG(logger.DLog, "not find file(%v), create a file\n", path_name)
 		}
 	} else {
 		fd, err = os.OpenFile(path_name, os.O_APPEND|os.O_RDWR, os.ModeAppend|os.ModePerm)
@@ -37,6 +39,8 @@ func NewFile(path_name string) (file *File, fd *os.File, Err string, err error) 
 			logger.DEBUG(logger.DError, err.Error())
 			Err = "OpenFile"
 			return nil, nil, Err, err
+		}else{
+			logger.DEBUG(logger.DLog, "find file(%v), open this file\n", path_name)
 		}
 	}
 
@@ -81,7 +85,7 @@ func (f *File) Update(path, file_name string) error {
 	f.mu.Lock()
 	f.filename = NewFilePath
 	f.mu.Unlock()
-	
+
 	return MovName(OldFilePath, NewFilePath)
 }
 
@@ -93,7 +97,7 @@ func (f *File) OpenFile() *os.File {
 	return file
 }
 
-func (f *File)GetFirstIndex(file *os.File) int64 {
+func (f *File) GetFirstIndex(file *os.File) int64 {
 	var node Key
 	data_node := make([]byte, NODE_SIZE)
 
@@ -109,32 +113,47 @@ func (f *File)GetFirstIndex(file *os.File) int64 {
 	}
 
 	json.Unmarshal(data_node, &node)
-	
+
 	return node.Start_index
 }
 
 //读取文件，获取该partition的最后一个index
 func (f *File) GetIndex(file *os.File) int64 {
+	var node Key
+	var index int64
+	index = -1
+	data_node := make([]byte, NODE_SIZE)
 	f.mu.RLock()
-	// var index int64
+	// 读取文件，获取该partition的最后一个index
+	defer f.mu.RUnlock()
 
-	/*
-		读取文件，获取该partition的最后一个index
-	*/
+	for {
+		_, err := file.ReadAt(data_node, 0)
 
-	f.mu.RUnlock()
-
-	return 0
+		if err == io.EOF {
+			//读到文件末尾
+			logger.DEBUG(logger.DLeader, "read All file, do not find this index\n")
+			if index == 0 {
+				json.Unmarshal(data_node, &node)
+				index = node.End_index
+			}else{
+				index = 0
+			}
+			return index
+		} else {
+			index = 0
+		}
+	}
 }
 
 func (f *File) WriteFile(file *os.File, node Key, data_msg []byte) bool {
 	data_node := &bytes.Buffer{}
-    err := binary.Write(data_node, binary.BigEndian, node)
-    if err != nil {
+	err := binary.Write(data_node, binary.BigEndian, node)
+	if err != nil {
 		logger.DEBUG(logger.DError, err.Error())
 		logger.DEBUG(logger.DError, "%v turn bytes fail\n", node)
 		return false
-    }
+	}
 
 	// logger.DEBUG(logger.DdLog, "the node size is %v\n", len(data_node.Bytes()))
 	f.mu.Lock()
@@ -179,7 +198,7 @@ func (f *File) ReadFile(file *os.File, offset int64) (Key, []Message, error) {
 	data_msg := make([]byte, node.Size)
 	offset += int64(f.node_size)
 	size, err = file.ReadAt(data_msg, offset)
-	
+
 	// logger.DEBUG(logger.DdLog, "the size is %v, data is %v offset is %v, node.Size is %v\n", size, data_node, offset, node.Size)
 	if int64(size) != node.Size {
 		return node, msg, errors.New("read msg size is not NODE_SIZE")
@@ -229,7 +248,7 @@ func (f *File) ReadBytes(file *os.File, offset int64) (Key, []byte, error) {
 
 func (f *File) FindOffset(file *os.File, index int64) (int64, error) {
 	var node Key
-	
+
 	data_node := make([]byte, NODE_SIZE)
 
 	offset := int64(0)

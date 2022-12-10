@@ -26,7 +26,7 @@ const (
 )
 
 // type Op struct {
-// 	Cli_index string //client的唯一标识
+// 	Cli_name string //client的唯一标识
 // 	Cmd_index int64  //操作id号
 // 	Ser_index int64  //Server的id
 // 	Operate   string //这里的操作只有append
@@ -154,12 +154,24 @@ func (p *parts_raft) Append(in info) (string, error) {
 		return ErrTimeOut, nil
 	}
 
+	_, ok = p.CDM[str]
+	if !ok {
+		logger.DEBUG_RAFT(logger.DLog, "S%d make CDM Tpart(%v)\n", p.me, str)
+		p.CDM[str] = make(map[string]int64)
+	}
+	_, ok = p.CSM[str]
+	if !ok {
+		logger.DEBUG_RAFT(logger.DLog, "S%d make CSM Tpart(%v)\n", p.me, str)
+		p.CSM[str] = make(map[string]int64)
+	}
+
 	in1, okk1 := p.CDM[str][in.producer]
 	if okk1 && in1 == in.cmdindex {
-		// logger.DEBUG_RAFT(logger.DLeader, "S%d had done key(%v) value(%v) Op(%v) from(C%d) OIndex(%d)\n", kv.me, kv.gid, args.Key, args.Value, args.Op, args.CIndex, args.OIndex)
+		logger.DEBUG_RAFT(logger.DInfo, "S%d p.CDM[%v][%v](%v) in.cmdindex(%v)\n", p.me, str, in.producer, p.CDM[str][in.producer], in.cmdindex)
 		p.mu.Unlock()
 		return OK, nil
 	} else if !okk1 {
+		logger.DEBUG_RAFT(logger.DLog, "S%d add CDM[%v][%v](%v)\n", p.me, str, in.producer, 0)
 		p.CDM[str][in.producer] = 0
 	}
 	p.mu.Unlock()
@@ -167,24 +179,26 @@ func (p *parts_raft) Append(in info) (string, error) {
 	var index int
 	O := raft.Op{
 		Ser_index: int64(p.me),
-		Cli_index: in.producer,
+		Cli_name:  in.producer,
 		Cmd_index: in.cmdindex,
-		// Operate:   args.Op,
-		Topic: in.topic_name,
-		Part:  in.part_name,
-		Tpart: str,
-		Msg:   in.message,
-		Size:  in.size,
+		Operate:   "Append",
+		Topic:     in.topic_name,
+		Part:      in.part_name,
+		Tpart:     str,
+		Msg:       in.message,
+		Size:      in.size,
 	}
 
 	p.mu.Lock()
 	logger.DEBUG_RAFT(logger.DLog, "S%d lock 285\n", p.me)
 	in2, okk2 := p.CSM[str][in.producer]
 	if !okk2 {
+		logger.DEBUG_RAFT(logger.DLog, "S%d add CSM[%v][%v](%v)\n", p.me, str, in.producer, 0)
 		p.CSM[str][in.producer] = 0
 	}
 	p.mu.Unlock()
 
+	logger.DEBUG_RAFT(logger.DInfo, "S%d p.CSM[%v][%v](%v) in.cmdindex(%v)\n", p.me, str, in.producer, p.CSM[str][in.producer], in.cmdindex)
 	if in2 == in.cmdindex {
 		_, isLeader = p.Partitions[str].GetState()
 	} else {
@@ -292,17 +306,18 @@ func (p *parts_raft) StartServer() {
 				select {
 				case m := <-p.applyCh:
 
-					if m.BeLeader && m.Leader == p.me{
+					if m.BeLeader {
 						str := m.TopicName + m.PartName
-						logger.DEBUG_RAFT(logger.DLog, "S%d Broker tPart(%v) become leader\n", p.me, str)
+						logger.DEBUG_RAFT(logger.DLog, "S%d Broker tPart(%v) become leader aply from %v to %v\n", p.me, str, p.applyindexs[str], m.CommandIndex)
 						p.applyindexs[str] = m.CommandIndex
-
-						p.appench <- info{
-							producer:   "Leader",
-							topic_name: m.TopicName,
-							part_name:  m.PartName,
+						if m.Leader == p.me {
+							p.appench <- info{
+								producer:   "Leader",
+								topic_name: m.TopicName,
+								part_name:  m.PartName,
+							}
 						}
-					}else if m.CommandValid && !m.BeLeader{
+					} else if m.CommandValid && !m.BeLeader {
 						start := time.Now()
 
 						logger.DEBUG_RAFT(logger.DLog, "S%d try lock 847\n", p.me)
@@ -311,40 +326,43 @@ func (p *parts_raft) StartServer() {
 						ti := time.Since(start).Milliseconds()
 						logger.DEBUG_RAFT(logger.DLog2, "S%d AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%d\n", p.me, ti)
 
-						// i := reflect.TypeOf(m.Command)
-						// logger.DEBUG(logger.DLog, "the type is %v\n", i.Name())
-						// if i.Name() == "LeaderOp" {
-						// 	// O := m.Command.(raft.LeaderOp)
-							
-							
-						// 	continue
-						// }
-
 						O := m.Command
 
-						logger.DEBUG_RAFT(logger.DLog, "S%d TTT CommandValid(%v) applyindex(%v) CommandIndex(%v) CDM[C%v](%v) from(%v)\n", p.me, m.CommandValid, p.applyindexs[O.Tpart], m.CommandIndex, O.Cli_index, O.Cmd_index, O.Ser_index)
+						_, ok := p.CDM[O.Tpart]
+						if !ok {
+							logger.DEBUG_RAFT(logger.DLog, "S%d make CDM Tpart(%v)\n", p.me, O.Tpart)
+							p.CDM[O.Tpart] = make(map[string]int64)
+							// if O.Cli_name != "TIMEOUT" {
+							// 	p.CDM[]
+							// }
+						}
+						_, ok = p.CSM[O.Tpart]
+						if !ok {
+							logger.DEBUG_RAFT(logger.DLog, "S%d make CSM Tpart(%v)\n", p.me, O.Tpart)
+							p.CSM[O.Tpart] = make(map[string]int64)
+						}
+
+						logger.DEBUG_RAFT(logger.DLog, "S%d TTT CommandValid(%v) applyindex[%v](%v) CommandIndex(%v) CDM[C%v][%v](%v) O.Cmd_index(%v) from(%v)\n", p.me, m.CommandValid, O.Tpart, p.applyindexs[O.Tpart], m.CommandIndex, O.Tpart, O.Cli_name, p.CDM[O.Tpart][O.Cli_name], O.Cmd_index, O.Ser_index)
 
 						if p.applyindexs[O.Tpart]+1 == m.CommandIndex {
 
-							if O.Cli_index == "TIMEOUT" {
+							if O.Cli_name == "TIMEOUT" {
 								logger.DEBUG_RAFT(logger.DLog, "S%d for TIMEOUT update applyindex %v to %v\n", p.me, p.applyindexs[O.Tpart], m.CommandIndex)
 								p.applyindexs[O.Tpart] = m.CommandIndex
-							} else if O.Cli_index == "Leader" {
-								logger.DEBUG_RAFT(logger.DLog, "S%d tPart(%v) become leader\n", p.me, O.Tpart)
+							} else if p.CDM[O.Tpart][O.Cli_name] < O.Cmd_index {
+								logger.DEBUG_RAFT(logger.DLeader, "S%d get message update CDM[%v][%v] from %v to %v update applyindex %v to %v\n", p.me, O.Tpart, O.Cli_name, p.CDM[O.Tpart][O.Cli_name], O.Cmd_index, p.applyindexs[O.Tpart], m.CommandIndex)
 								p.applyindexs[O.Tpart] = m.CommandIndex
 
-								p.appench <- info{
-									producer:   O.Cli_index,
-									topic_name: O.Topic,
-									part_name:  O.Part,
-								}
-
-							} else if p.CDM[O.Tpart][O.Cli_index] < O.Cmd_index {
-								logger.DEBUG_RAFT(logger.DLeader, "S%d update CDM[%v] from %v to %v update applyindex %v to %v\n", p.me, O.Cli_index, p.CDM[O.Tpart][O.Cli_index], O.Cmd_index, p.applyindexs[O.Tpart], m.CommandIndex)
-								p.applyindexs[O.Tpart] = m.CommandIndex
-
-								p.CDM[O.Tpart][O.Cli_index] = O.Cmd_index
+								p.CDM[O.Tpart][O.Cli_name] = O.Cmd_index
 								if O.Operate == "Append" {
+
+									p.appench <- info{
+										producer:   O.Cli_name,
+										message:    O.Msg,
+										topic_name: O.Topic,
+										part_name:  O.Part,
+										size:       O.Size,
+									}
 
 									select {
 									case p.Add <- COMD{index: m.CommandIndex}:
@@ -352,21 +370,12 @@ func (p *parts_raft) StartServer() {
 									default:
 										// logger.DEBUG_RAFT(logger.DLog, "S%d can not write putAdd in(%v)\n", kv.me, kv.gid, m.CommandIndex)
 									}
-
-									p.appench <- info{
-										producer:   O.Cli_index,
-										message:    O.Msg,
-										topic_name: O.Topic,
-										part_name:  O.Part,
-										size:       O.Size,
-									}
-
 								}
-							} else if p.CDM[O.Tpart][O.Cli_index] == O.Cmd_index {
+							} else if p.CDM[O.Tpart][O.Cli_name] == O.Cmd_index {
 								logger.DEBUG_RAFT(logger.DLog2, "S%d this cmd had done, the log had two update applyindex %v to %v\n", p.me, p.applyindexs[O.Tpart], m.CommandIndex)
 								p.applyindexs[O.Tpart] = m.CommandIndex
 							} else {
-								logger.DEBUG_RAFT(logger.DLog2, "S%d the topic_partition(%v) producer(%v) OIndex(%v) < CDM(%v)\n", p.me, O.Tpart, O.Cli_index, O.Cmd_index, p.CDM[O.Tpart][O.Cli_index])
+								logger.DEBUG_RAFT(logger.DLog2, "S%d the topic_partition(%v) producer(%v) OIndex(%v) < CDM(%v)\n", p.me, O.Tpart, O.Cli_name, O.Cmd_index, p.CDM[O.Tpart][O.Cli_name])
 								p.applyindexs[O.Tpart] = m.CommandIndex
 							}
 
@@ -414,7 +423,7 @@ func (p *parts_raft) StartServer() {
 				case <-time.After(TIMEOUT * time.Microsecond):
 					O := raft.Op{
 						Ser_index: int64(p.me),
-						Cli_index: "TIMEOUT",
+						Cli_name:  "TIMEOUT",
 						Cmd_index: -1,
 						Operate:   "TIMEOUT",
 					}
@@ -545,7 +554,7 @@ func (p *parts_raft) SnapShot(ctx context.Context, rep *api.SnapShotArgs_) (r *a
 		LastIncludedIndex: int(rep.LastIncludedIndex),
 		LastIncludedTerm:  int(rep.LastIncludedTerm),
 		// Log:               rep.Log,
-		Snapshot:          rep.Snapshot,
+		Snapshot: rep.Snapshot,
 	})
 
 	return &api.SnapShotReply{

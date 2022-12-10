@@ -18,10 +18,6 @@ import (
 	"github.com/cloudwego/kitex/server"
 )
 
-var (
-	Name string
-)
-
 const (
 	NODE_SIZE = 24
 )
@@ -122,7 +118,6 @@ func (s *Server) make(opt Options, opt_cli []server.Option) {
 
 	s.CheckList()
 	s.Name = opt.Name
-	Name = opt.Name
 	s.me = opt.Me
 
 	//本地创建parts——raft，为raft同步做准备
@@ -180,10 +175,11 @@ func (s *Server) GetApplych(applych chan info) {
 			topic, ok := s.topics[msg.topic_name]
 			s.mu.RUnlock()
 			
-			logger.DEBUG(logger.DLog, "the message from applych is %v\n", msg)
+			logger.DEBUG(logger.DLog, "S%d the message from applych is %v\n", s.me, msg)
 			if !ok {
 				logger.DEBUG(logger.DError, "topic(%v) is not in this broker\n", msg.topic_name)
 			} else {
+				msg.me = s.me
 				topic.addMessage(msg) //信息同步
 			}
 		}
@@ -240,7 +236,7 @@ func (s *Server) HandleTopics(Topics map[string]TopNodeInfo) {
 	for topic_name, topic := range Topics {
 		_, ok := s.topics[topic_name]
 		if !ok {
-			top := NewTopic(topic_name)
+			top := NewTopic(s.Name, topic_name)
 			top.HandleParttitions(topic.Partitions)
 
 			s.topics[topic_name] = top
@@ -252,7 +248,7 @@ func (s *Server) HandleTopics(Topics map[string]TopNodeInfo) {
 
 func (s *Server) CheckList() {
 	str, _ := os.Getwd()
-	str += "/" + Name
+	str += "/" + s.Name
 	ret := CheckFileOrList(str)
 	// logger.DEBUG(logger.DLog, "Check list %v is %v\n", str, ret)
 	if !ret {
@@ -290,7 +286,7 @@ func (s *Server) PrepareAcceptHandle(in info) (ret string, err error) {
 	s.mu.Lock()
 	topic, ok := s.topics[in.topic_name]
 	if !ok {
-		topic = NewTopic(in.topic_name)
+		topic = NewTopic(s.Name, in.topic_name)
 		s.topics[in.topic_name] = topic
 	}
 
@@ -323,7 +319,7 @@ func (s *Server) PrepareSendHandle(in info) (ret string, err error) {
 	s.mu.Lock()
 	topic, ok := s.topics[in.topic_name]
 	if !ok {
-		topic = NewTopic(in.topic_name)
+		topic = NewTopic(s.Name, in.topic_name)
 		s.topics[in.topic_name] = topic
 	}
 	s.mu.Unlock()
@@ -652,7 +648,7 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 
 		go func() {
 
-			Partition := NewPartition(in.topic_name, in.part_name)
+			Partition := NewPartition(s.Name, in.topic_name, in.part_name)
 			Partition.StartGetMessage(File, fd, in)
 			ice := 0
 

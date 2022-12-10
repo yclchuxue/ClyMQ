@@ -1,9 +1,9 @@
 package server
 
 import (
-	"ClyMQ/logger"
 	"ClyMQ/kitex_gen/api/client_operations"
 	"ClyMQ/kitex_gen/api/zkserver_operations"
+	"ClyMQ/logger"
 	"encoding/json"
 	"errors"
 	"hash/crc32"
@@ -33,22 +33,24 @@ const (
 
 type Topic struct {
 	rmu     sync.RWMutex
+	Broker 	string
 	Name    string
 	Files   map[string]*File
 	Parts   map[string]*Partition
 	subList map[string]*SubScription
 }
 
-func NewTopic(topic_name string) *Topic {
+func NewTopic(broker_name, topic_name string) *Topic {
 	topic := &Topic{
 		rmu:     sync.RWMutex{},
+		Broker:  broker_name,
 		Name:    topic_name,
 		Parts:   make(map[string]*Partition),
 		subList: make(map[string]*SubScription),
 		Files:   make(map[string]*File),
 	}
 	str, _ := os.Getwd()
-	str += "/" + Name + "/" + topic_name
+	str += "/" + broker_name + "/" + topic_name
 	CreateList(str) //若存在，则不会创建
 
 	return topic
@@ -58,13 +60,13 @@ func (t *Topic) PrepareAcceptHandle(in info) (ret string, err error) {
 	t.rmu.Lock()
 	partition, ok := t.Parts[in.part_name]
 	if !ok {
-		partition = NewPartition(t.Name, in.part_name)
+		partition = NewPartition(t.Broker, t.Name, in.part_name)
 		t.Parts[in.part_name] = partition
 	}
 
 	//设置partition中的file和fd，start_index等信息
 	str, _ := os.Getwd()
-	str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
+	str += "/" + t.Broker + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
 	file, fd, Err, err := NewFile(str)
 	if err != nil {
 		return Err, err
@@ -94,7 +96,7 @@ func (t *Topic) CloseAcceptPart(in info) (start, end int64, ret string, err erro
 		logger.DEBUG(logger.DError, err.Error())
 	} else {
 		str, _ := os.Getwd()
-		str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/"
+		str += "/" + t.Broker + "/" + in.topic_name + "/" + in.part_name + "/"
 		t.rmu.Lock()
 		t.Files[str+in.new_name] = t.Files[str+in.file_name]
 		delete(t.Files, str+in.file_name)
@@ -110,13 +112,13 @@ func (t *Topic) PrepareSendHandle(in info, zkclient *zkserver_operations.Client)
 	//检查或创建partition
 	partition, ok := t.Parts[in.part_name]
 	if !ok {
-		partition = NewPartition(t.Name, in.part_name)
+		partition = NewPartition(t.Broker, t.Name, in.part_name)
 		t.Parts[in.part_name] = partition
 	}
 
 	//检查文件是否存在, 若存在为获得File则创建File,若没有则返回错误.
 	str, _ := os.Getwd()
-	str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
+	str += "/" + t.Broker + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
 	file, ok := t.Files[str]
 	if !ok {
 		file, fd, Err, err := CheckFile(str)
@@ -165,7 +167,7 @@ func (t *Topic) HandleParttitions(Partitions map[string]ParNodeInfo) {
 	for part_name := range Partitions {
 		_, ok := t.Parts[part_name]
 		if !ok {
-			part := NewPartition(t.Name, part_name)
+			part := NewPartition(t.Broker, t.Name, part_name)
 			// part.HandleBlocks(topic_name, part_name, partition.Blocks)
 
 			t.Parts[part_name] = part
@@ -178,7 +180,7 @@ func (t *Topic) HandleParttitions(Partitions map[string]ParNodeInfo) {
 func (t *Topic) GetFile(in info) *File {
 	t.rmu.Lock()
 	str, _ := os.Getwd()
-	str += "/" + Name + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
+	str += "/" + t.Broker + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
 	File, ok := t.Files[str]
 	if !ok {
 		file, fd, Err, err := NewFile(str)
@@ -201,24 +203,28 @@ func (t *Topic) GetParts() map[string]*Partition {
 }
 
 func (t *Topic) AddPartition(part_name string) {
-	part := NewPartition(t.Name, part_name)
+	part := NewPartition(t.Broker, t.Name, part_name)
 	t.Parts[part_name] = part
 }
 
 func (t *Topic) addMessage(in info) error {
+	t.rmu.RLock()
 	part, ok := t.Parts[in.part_name]
+	t.rmu.RUnlock()
 	if !ok {
 		logger.DEBUG(logger.DError, "not find this part in add message\n")
-		part := NewPartition(in.topic_name, in.part_name) // new a Parition //需要向sub中和config中加入一个partition
+		part := NewPartition(t.Broker, in.topic_name, in.part_name) // new a Parition //需要向sub中和config中加入一个partition
 		// t.Files[req.key] = file
+		t.rmu.Lock()
 		t.Parts[in.part_name] = part
+		t.rmu.Unlock()
 	}
-	logger.DEBUG(logger.DLog, "add before lock in topic addmsg\n")
-	part.mu.Lock()
-	logger.DEBUG(logger.DLog, "add had lock in topic addmsg\n")
+	// logger.DEBUG(logger.DLog, "add before lock in topic addmsg\n")
+	// part.mu.Lock()
+	// logger.DEBUG(logger.DLog, "add had lock in topic addmsg\n")
+	// part.mu.Unlock()
 
-	part.mu.Unlock()
-
+	logger.DEBUG(logger.DLog, "topic(%v) use partition(%v) addMessage\n", t.Name, in.part_name)
 	part.AddMessage(in)
 
 	return nil
@@ -293,6 +299,7 @@ const (
 
 type Partition struct {
 	mu    sync.RWMutex
+	Broker string
 	key   string
 	state string
 
@@ -304,16 +311,18 @@ type Partition struct {
 	queue       []Message
 }
 
-func NewPartition(topic_name, part_name string) *Partition {
+func NewPartition(broker_name, topic_name, part_name string) *Partition {
 	part := &Partition{
 		mu:    sync.RWMutex{},
+		Broker: broker_name,
 		state: CLOSE,
 		key:   part_name,
+		index: 0,
 		// queue: make([]Message, 50),
 	}
 
 	str, _ := os.Getwd()
-	str += "/" + Name + "/" + topic_name + "/" + part_name
+	str += "/" + broker_name + "/" + topic_name + "/" + part_name
 	CreateList(str) //若存在，则不会创建
 
 	return part
@@ -334,7 +343,7 @@ func (p *Partition) StartGetMessage(file *File, fd *os.File, in info) string {
 		p.fd = fd
 		p.file_name = in.file_name
 		p.index = file.GetIndex(fd)
-		p.start_index = p.index + 1
+		p.start_index = p.index
 		ret = OK
 	}
 	return ret
@@ -345,7 +354,7 @@ func (p *Partition) CloseAcceptMessage(in info) (start, end int64, ret string, e
 	defer p.mu.Unlock()
 	if p.state == ALIVE {
 		str, _ := os.Getwd()
-		str += "/" + Name + "/" + in.topic_name + "/" + in.part_name
+		str += "/" + p.Broker + "/" + in.topic_name + "/" + in.part_name
 		err = p.file.Update(str, in.new_name) //修改本地文件名
 		p.file_name = in.new_name
 		p.state = DOWN
@@ -396,7 +405,7 @@ func (p *Partition) AddMessage(in info) (ret string, err error) {
 		Part_name:  in.part_name,
 		Msg:        in.message,
 	}
-	// logger.DEBUG(logger.DLog, "part_name %v add message %v index is %v\n", p.key, msg, p.index)
+	logger.DEBUG(logger.DLog, "part_name(%v) add message %v index is %v size is %v\n", p.key, msg, p.index, p.index-p.start_index)
 
 	//判断需要的ack，
 
@@ -414,20 +423,23 @@ func (p *Partition) AddMessage(in info) (ret string, err error) {
 			Start_index: p.start_index,
 			End_index:   p.start_index + VERTUAL_10 - 1,
 		}
-		
+
 		data_msg, err := json.Marshal(msg)
 		if err != nil {
 			logger.DEBUG(logger.DError, "%v turn json fail\n", msg)
 		}
 		node.Size = int64(len(data_msg))
 
-		// logger.DEBUG(logger.DLog, "need write msgs size is (%v)\n", node.Size)
+		logger.DEBUG(logger.DLog, "need write msgs size is (%v)\n", node.Size)
 		if !p.file.WriteFile(p.fd, node, data_msg) {
 			logger.DEBUG(logger.DError, "write to %v faile\n", p.file_name)
+		}else{
+			logger.DEBUG(logger.DLog, "S%d write to %v success msgs %v\n", in.me, p.file_name, msg)
 		}
 		p.start_index += VERTUAL_10 + 1
 		p.queue = p.queue[VERTUAL_10:]
 	}
+
 	p.mu.Unlock()
 
 	return ret, err
@@ -749,8 +761,8 @@ func (c *Config) DeletePartition(part_name string, file *File) {
 //直到遇到ConH为 false 的
 func (c *Config) RebalancePtoC() {
 
-	c.consistent.SetFreeNode()   //将空闲节点设为len(consumers)
-	c.consistent.TurnZero()		 //将conusmer全设为空闲
+	c.consistent.SetFreeNode() //将空闲节点设为len(consumers)
+	c.consistent.TurnZero()    //将conusmer全设为空闲
 
 	parttocon := make(map[string][]string)
 
@@ -770,7 +782,7 @@ func (c *Config) RebalancePtoC() {
 
 	for {
 		for name := range Parts {
-			if c.consistent.GetFreeNodeNum() > 0{
+			if c.consistent.GetFreeNodeNum() > 0 {
 				node := c.consistent.GetNodeFree(name)
 				var array []string
 				array, ok := parttocon[name]
@@ -778,11 +790,11 @@ func (c *Config) RebalancePtoC() {
 				if !ok {
 					parttocon[name] = array
 				}
-			}else{
+			} else {
 				break
 			}
 		}
-		if c.consistent.GetFreeNodeNum() <= 0{
+		if c.consistent.GetFreeNodeNum() <= 0 {
 			break
 		}
 	}
@@ -898,7 +910,7 @@ func (c *Consistent) Add(node string, power int) error {
 	c.nodes[node] = true
 	c.ConH[node] = false
 
-	for i := 0; i < c.vertualNodeCount * power; i++ {
+	for i := 0; i < c.vertualNodeCount*power; i++ {
 		virtualKey := c.hashKey(node + strconv.Itoa(i))
 		c.circle[virtualKey] = node
 		c.hashSortedNodes = append(c.hashSortedNodes, virtualKey)

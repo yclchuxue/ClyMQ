@@ -92,6 +92,7 @@ func (s *RPCServer) Push(ctx context.Context, req *api.PushRequest) (resp *api.P
 		// startIndex: req.StartIndex,
 		// endIndex:   req.EndIndex,
 		ack:        req.Ack,
+		cmdindex:   req.Cmdindex,
 		message: req.Message,
 		size:    req.Size,
 	})
