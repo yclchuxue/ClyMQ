@@ -130,7 +130,7 @@ func (z *ZK) RegisterNode(znode interface{}) (err error) {
 		data, err = json.Marshal(blnode)
 	case "DuplicateNode":
 		dnode = znode.(DuplicateNode)
-		path += z.TopicRoot + "/" + dnode.TopicName + "/Partitions/" + dnode.PartitionName + "/" + dnode.BlockName + "/" + dnode.Name
+		path += z.TopicRoot + "/" + dnode.TopicName + "/Partitions/" + dnode.PartitionName + "/" + dnode.BlockName + "/" + dnode.BrokerName
 		data, err = json.Marshal(dnode)
 	}
 
@@ -262,13 +262,11 @@ type Part struct {
 }
 
 //检查broker是否在线
-func (z *ZK) CheckBroker(broker_path string) bool {
-	ok, _, _ := z.conn.Exists(broker_path + "/state")
-	if ok {
-		return true
-	} else {
-		return false
-	}
+func (z *ZK) CheckBroker(BrokerName string) bool {
+	path := z.BrokerRoot + "/" + BrokerName + "/state"
+	ok, _, _ := z.conn.Exists(path)
+	logger.DEBUG(logger.DLog, "state(%v) path is %v\n", ok, path)
+	return ok
 }
 
 //consumer 获取PTP的Brokers //（和PTP的offset）
@@ -302,6 +300,7 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 				logger.DEBUG(logger.DError, "get block node fail%v/%v/%v\n", part, part, block)
 				continue
 			}
+			logger.DEBUG(logger.DLog, "the block is %v\n", info)
 			if info.StartOffset <= PTP_index && info.EndOffset >= PTP_index {
 
 				Duplicates, _, _ := z.conn.Children(path + "/" + part + "/" + info.Name)
@@ -312,13 +311,17 @@ func (z *ZK) GetBrokers(topic string) ([]Part, error) {
 						logger.DEBUG(logger.DError, "get dup node fail%v/%v/%v/%v\n", path, part, info.Name, duplicate)
 						continue
 					}
+					logger.DEBUG(logger.DLog, "the path of dup is %v node is %v\n", path + "/" + part + "/" + info.Name + "/" + duplicate, duplicatenode)
 					if max_dup.EndOffset == 0 || max_dup.EndOffset <= duplicatenode.EndOffset {
 						//保证broker在线
 						if z.CheckBroker(duplicatenode.BrokerName) {
 							max_dup = duplicatenode
+						}else{
+							logger.DEBUG(logger.DLog, "the broker %v is not online\n", duplicatenode.BrokerName)
 						}
 					}
 				}
+				logger.DEBUG(logger.DLog, "the max_dup is %v\n", max_dup)
 				var ret string
 				if max_dup.EndOffset != 0 {
 					ret = "OK"
