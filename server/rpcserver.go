@@ -279,19 +279,39 @@ func (s *RPCServer) BroInfo(ctx context.Context, req *api.BroInfoRequest) (r *ap
 }
 
 //broker---->zkserver
-func (s *RPCServer) UpdateOffset(ctx context.Context, req *api.UpdateOffsetRequest) (r *api.UpdateOffsetResponse, err error) {
-	err = s.zkserver.UpdateOffset(Info_in{
+func (s *RPCServer) UpdatePTPOffset(ctx context.Context, req *api.UpdatePTPOffsetRequest) (r *api.UpdatePTPOffsetResponse, err error) {
+	err = s.zkserver.UpdatePTPOffset(Info_in{
 		topic_name: req.Topic,
 		part_name:  req.Part,
 		index:      req.Offset,
 	})
 	if err != nil {
 		logger.DEBUG(logger.DError, err.Error())
-		return &api.UpdateOffsetResponse{
+		return &api.UpdatePTPOffsetResponse{
 			Ret: false,
 		}, err
 	}
-	return &api.UpdateOffsetResponse{
+	return &api.UpdatePTPOffsetResponse{
+		Ret: true,
+	}, nil
+}
+
+func (s *RPCServer) UpdateDup(ctx context.Context, req *api.UpdateDupRequest) (r *api.UpdateDupResponse, err error) {
+	err = s.zkserver.UpdateDupNode(Info_in{
+		topic_name: req.Topic,
+		part_name:  req.Part,
+		cli_name:   req.BrokerName,
+		blockname:  req.BlockName,
+		index:      req.EndIndex,
+		// leader:     req.Leader,
+	})
+	if err != nil {
+		logger.DEBUG(logger.DError, err.Error())
+		return &api.UpdateDupResponse{
+			Ret: false,
+		}, err
+	}
+	return &api.UpdateDupResponse{
 		Ret: true,
 	}, nil
 }

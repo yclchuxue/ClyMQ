@@ -9,7 +9,7 @@ import (
 )
 
 type PartKey struct {
-	name string `json:"name"`
+	Name string `json:"name"`
 }
 
 //初始化Broker时的信息
@@ -63,6 +63,11 @@ type BrokerS struct {
 const (
 	ZKBROKER = "zkbroker"
 	BROKER   = "broker"
+
+	PTP_PUSH = 1
+	PTP_PULL = 2
+	PSB_PUSH = 3
+	PSB_PULL = 4
 )
 
 func GetIpport() string {
@@ -76,6 +81,11 @@ func GetIpport() string {
 		ipport += mac.String()
 	}
 	return ipport
+}
+
+func GetBlockName(file_name string) (ret string) {
+	ret = file_name[:len(file_name)-4]
+	return ret
 }
 
 func CheckFileOrList(path string) (ret bool) {
@@ -126,7 +136,7 @@ func GetPartKeyArray(parts map[string]*Partition) []PartKey {
 
 	for part_name := range parts {
 		array = append(array, PartKey{
-			name: part_name,
+			Name: part_name,
 		})
 	}
 

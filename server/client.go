@@ -280,7 +280,7 @@ func (p *Part) GetDone(close chan *Part) {
 				for {
 					if p.buf_done[in] == HADDO {
 						p.start_index = p.buffer_node[in].End_index + 1
-						(*p.zkclient).UpdateOffset(context.Background(), &api.UpdateOffsetRequest{
+						(*p.zkclient).UpdatePTPOffset(context.Background(), &api.UpdatePTPOffsetRequest{
 							Topic: p.topic_name,
 							Part: p.part_name,
 							Offset: p.start_index,

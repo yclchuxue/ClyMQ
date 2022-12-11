@@ -1,9 +1,11 @@
 package server
 
 import (
+	"ClyMQ/kitex_gen/api"
 	"ClyMQ/kitex_gen/api/client_operations"
 	"ClyMQ/kitex_gen/api/zkserver_operations"
 	"ClyMQ/logger"
+	"context"
 	"encoding/json"
 	"errors"
 	"hash/crc32"
@@ -137,11 +139,11 @@ func (t *Topic) PrepareSendHandle(in info, zkclient *zkserver_operations.Client)
 	}
 	//在sub中创建对应文件的config，来等待startget
 	t.rmu.Unlock()
-	if in.option == 1 {
+	if in.option == PTP_PUSH {
 		ret, err = sub.AddPTPConfig(in, partition, file, zkclient)
-	} else if in.option == 3 {
+	} else if in.option == PSB_PUSH {
 		sub.AddPSBConfig(in, in.part_name, file, zkclient)
-	} else if in.option == 2 || in.option == 4 { //PTP_PULL  ||  PSB_PULL
+	} else if in.option == PTP_PULL || in.option == PSB_PULL { //PTP_PULL  ||  PSB_PULL
 		//在sub中创建一个Node用来保存该consumer的Pull的文件描述符等信息
 		sub.AddNode(in, file)
 	}
@@ -441,6 +443,14 @@ func (p *Partition) AddMessage(in info) (ret string, err error) {
 	}
 
 	p.mu.Unlock()
+
+	(*in.zkclient).UpdateDup(context.Background(), &api.UpdateDupRequest{
+		Topic:  in.topic_name,
+		Part:   in.part_name,
+		BrokerName: in.BrokerName,
+		BlockName: GetBlockName(in.file_name),
+		EndIndex:  p.index,
+	})
 
 	return ret, err
 }

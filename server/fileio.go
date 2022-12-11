@@ -30,18 +30,20 @@ func NewFile(path_name string) (file *File, fd *os.File, Err string, err error) 
 			Err = "CreatFileFail"
 			logger.DEBUG(logger.DError, err.Error())
 			return nil, nil, Err, err
-		}else{
-			logger.DEBUG(logger.DLog, "not find file(%v), create a file\n", path_name)
-		}
+		} 
+		// else {
+		// 	logger.DEBUG(logger.DLog, "not find file(%v), create a file\n", path_name)
+		// }
 	} else {
 		fd, err = os.OpenFile(path_name, os.O_APPEND|os.O_RDWR, os.ModeAppend|os.ModePerm)
 		if err != nil {
 			logger.DEBUG(logger.DError, err.Error())
 			Err = "OpenFile"
 			return nil, nil, Err, err
-		}else{
-			logger.DEBUG(logger.DLog, "find file(%v), open this file\n", path_name)
-		}
+		} 
+		// else {
+		// 	logger.DEBUG(logger.DLog, "find file(%v), open this file\n", path_name)
+		// }
 	}
 
 	file = &File{
@@ -108,41 +110,49 @@ func (f *File) GetFirstIndex(file *os.File) int64 {
 
 	if err == io.EOF {
 		//读到文件末尾
-		logger.DEBUG(logger.DLeader, "read All file, do not find this index")
+		logger.DEBUG(logger.DLeader, "read All file, the first_index is %v\n", 0)
 		return 0
 	}
 
-	json.Unmarshal(data_node, &node)
+	buf := &bytes.Buffer{}
+	binary.Write(buf, binary.BigEndian, data_node)
+	binary.Read(buf, binary.BigEndian, &node)
 
+	// logger.DEBUG(logger.DLog, "the node is %v\n", node)
 	return node.Start_index
 }
 
 //读取文件，获取该partition的最后一个index
 func (f *File) GetIndex(file *os.File) int64 {
 	var node Key
-	var index int64
+	var index, offset int64
 	index = -1
+	offset = 0
 	data_node := make([]byte, NODE_SIZE)
 	f.mu.RLock()
 	// 读取文件，获取该partition的最后一个index
 	defer f.mu.RUnlock()
 
 	for {
-		_, err := file.ReadAt(data_node, 0)
+		_, err := file.ReadAt(data_node, offset)
 
 		if err == io.EOF {
 			//读到文件末尾
-			logger.DEBUG(logger.DLeader, "read All file, do not find this index\n")
+			// logger.DEBUG(logger.DLeader, "read All file, get end_index is %v\n", node.End_index)
 			if index == 0 {
-				json.Unmarshal(data_node, &node)
 				index = node.End_index
-			}else{
+			} else {
 				index = 0
 			}
 			return index
 		} else {
 			index = 0
 		}
+		buf := &bytes.Buffer{}
+		binary.Write(buf, binary.BigEndian, data_node)
+		binary.Read(buf, binary.BigEndian, &node)
+
+		offset += offset + NODE_SIZE + node.Size
 	}
 }
 

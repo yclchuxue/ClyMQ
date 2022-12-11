@@ -41,6 +41,7 @@ type Info_in struct {
 	index      int64
 	option     int8
 	dupnum     int8
+	// leader     bool
 }
 
 type Info_out struct {
@@ -508,7 +509,7 @@ func (z *ZkServer) SetPartitionState(info Info_in) Info_out {
 
 func (z *ZkServer) GetDupsFromConsist(info Info_in) (Dups []zookeeper.DuplicateNode, data_brokers []byte) {
 	str := info.topic_name + info.part_name
-	Bro_dups := z.consistent.GetNode(str + "dup", 3)
+	Bro_dups := z.consistent.GetNode(str+"dup", 3)
 	// Bro_dup_2 := z.consistent.GetNode(str + "dup2")
 	// Bro_dup_3 := z.consistent.GetNode(str + "dup3")
 	Dups = append(Dups, zookeeper.DuplicateNode{
@@ -596,7 +597,7 @@ func (z *ZkServer) SubHandle(info Info_in) error {
 }
 
 //consumer查询该向那些broker发送请求
-//zkserver让broker准备好topic/sub和config    //Pub版
+//zkserver让broker准备好topic/sub和config
 func (z *ZkServer) HandStartGetBroker(info Info_in) (rets []byte, size int, err error) {
 	var Parts []zookeeper.Part
 
@@ -609,9 +610,9 @@ func (z *ZkServer) HandStartGetBroker(info Info_in) (rets []byte, size int, err 
 	})
 
 	//获取该topic或partition的broker,并保证在线,若全部离线则Err
-	if info.option == 1 { //ptp_push
+	if info.option == PTP_PULL || info.option == PTP_PUSH { //ptp_push
 		Parts, err = z.zk.GetBrokers(info.topic_name)
-	} else if info.option == 3 { //psb_push
+	} else if info.option == PSB_PULL || info.option == PSB_PUSH { //psb_push
 		Parts, err = z.zk.GetBroker(info.topic_name, info.part_name, info.index)
 	}
 	if err != nil {
@@ -664,9 +665,9 @@ func (z *ZkServer) SendPreoare(Parts []zookeeper.Part, info Info_in) (partkeys [
 			FileName:  part.File_name,
 			Option:    info.option,
 		}
-		if rep.Option == 1 { //ptp
+		if rep.Option == PTP_PULL || rep.Option == PTP_PUSH { //ptp
 			rep.Offset = part.PTP_index
-		} else if rep.Option == 3 { //psb
+		} else if rep.Option == PSB_PULL || rep.Option == PSB_PUSH { //psb
 			rep.Offset = info.index
 		}
 		resp, err := bro_cli.PrepareSend(context.Background(), rep)
@@ -685,7 +686,8 @@ func (z *ZkServer) SendPreoare(Parts []zookeeper.Part, info Info_in) (partkeys [
 	return partkeys
 }
 
-func (z *ZkServer) UpdateOffset(info Info_in) error {
+//修改Offset
+func (z *ZkServer) UpdatePTPOffset(info Info_in) error {
 	str := z.zk.TopicRoot + "/" + info.topic_name + "/" + "Partitions" + "/" + info.part_name
 	node, err := z.zk.GetPartitionNode(str)
 	if err != nil {
@@ -702,6 +704,37 @@ func (z *ZkServer) UpdateOffset(info Info_in) error {
 		PTPoffset: info.index,
 	})
 	return err
+}
+
+func (z *ZkServer) UpdateDupNode(info Info_in) error {
+	str := z.zk.TopicRoot + "/" + info.topic_name + "/" + "Partitions" + "/" + info.part_name + "/" + info.blockname
+	// if info.leader {
+	BlockNode, err := z.zk.GetBlockNode(str)
+	if err != nil {
+		logger.DEBUG(logger.DError, err.Error())
+		return err
+	}
+	if info.index > BlockNode.EndOffset {
+		BlockNode.EndOffset = info.index
+		err = z.zk.RegisterNode(BlockNode)
+		if err != nil {
+			logger.DEBUG(logger.DError, err.Error())
+			return err
+		}
+	}
+	// }
+	DupNode, err := z.zk.GetDuplicateNode(str + "/" + info.cli_name)
+	if err != nil {
+		logger.DEBUG(logger.DError, err.Error())
+		return err
+	}
+	DupNode.EndOffset = info.index
+	err = z.zk.RegisterNode(DupNode)
+	if err != nil {
+		logger.DEBUG(logger.DError, err.Error())
+		return err
+	}
+	return nil
 }
 
 func GetPartKeys(Parts []zookeeper.Part) (partkeys []clients.PartKey) {
@@ -726,7 +759,7 @@ func (z *ZkServer) CloseAcceptPartition(topicname, partname, brokername string, 
 		logger.DEBUG(logger.DError, err.Error())
 		return err.Error()
 	}
-	NewBlockName := "Block_" + string(index)
+	NewBlockName := "Block_" + strconv.Itoa(int(index))
 	NewFileName := NewBlockName + ".txt"
 
 	z.mu.RLock()
@@ -862,7 +895,7 @@ type ConsistentBro struct {
 	// 已绑定的broker为true
 	nodes map[string]bool
 
-	BroH     map[string]bool
+	BroH map[string]bool
 
 	mu sync.RWMutex
 	//虚拟节点个数
@@ -871,10 +904,10 @@ type ConsistentBro struct {
 
 func NewConsistentBro() *ConsistentBro {
 	con := &ConsistentBro{
-		hashSortedNodes:  make([]uint32, 2),
-		circle:           make(map[uint32]string),
-		nodes:            make(map[string]bool),
-		BroH:  			  make(map[string]bool),	
+		hashSortedNodes: make([]uint32, 2),
+		circle:          make(map[uint32]string),
+		nodes:           make(map[string]bool),
+		BroH:            make(map[string]bool),
 
 		mu:               sync.RWMutex{},
 		vertualNodeCount: VERTUAL_10,
@@ -947,7 +980,7 @@ func (c *ConsistentBro) Reduce(node string) error {
 	return nil
 }
 
-func (c *ConsistentBro) SetBroHFalse(){
+func (c *ConsistentBro) SetBroHFalse() {
 	for Bro := range c.BroH {
 		c.BroH[Bro] = false
 	}
@@ -985,7 +1018,6 @@ func (c *ConsistentBro) getPosition(hash uint32) (ret int) {
 	} else {
 		ret = len(c.hashSortedNodes) - 1
 	}
-
 
 	for c.BroH[c.circle[c.hashSortedNodes[ret]]] {
 		ret++

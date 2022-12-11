@@ -90,6 +90,11 @@ type info struct {
 	//fetch
 	LeaderBroker string
 	HostPort     string
+
+	//update dup
+	zkclient *zkserver_operations.Client
+	BrokerName string
+	// BlockName string
 }
 
 // type startget struct {
@@ -180,10 +185,12 @@ func (s *Server) GetApplych(applych chan info) {
 				logger.DEBUG(logger.DError, "topic(%v) is not in this broker\n", msg.topic_name)
 			} else {
 				msg.me = s.me
+				msg.BrokerName = s.Name
+				msg.zkclient = &s.zkclient
+				msg.file_name = "NowBlock.txt"
 				topic.addMessage(msg) //信息同步
 			}
 		}
-
 	}
 }
 
@@ -608,7 +615,7 @@ func (s *Server) PullHandle(in info) (MSGS, error) {
 		读取index，获得上次的index，写入zookeeper中
 	*/
 	if in.option == TOPIC_NIL_PTP_PULL {
-		s.zkclient.UpdateOffset(context.Background(), &api.UpdateOffsetRequest{
+		s.zkclient.UpdatePTPOffset(context.Background(), &api.UpdatePTPOffsetRequest{
 			Topic:  in.topic_name,
 			Part:   in.part_name,
 			Offset: in.offset,
@@ -712,10 +719,12 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 
 				File.WriteFile(fd, node, resp.Msgs)
 				index = resp.EndIndex + 1
-				s.zkclient.UpdateOffset(context.Background(), &api.UpdateOffsetRequest{
+				s.zkclient.UpdateDup(context.Background(), &api.UpdateDupRequest{
 					Topic:  in.topic_name,
 					Part:   in.part_name,
-					Offset: resp.EndIndex,
+					BrokerName: s.Name,
+					BlockName: GetBlockName(in.file_name),
+					EndIndex: resp.EndIndex,
 				})
 			}
 
@@ -796,6 +805,9 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 							part_name:  in.part_name,
 							size:       msg.Size,
 							message:    msg.Msg,
+							BrokerName: s.Name,
+							zkclient:   &s.zkclient,
+							file_name:  "NowBlock.txt",
 						})
 						if err != nil {
 							logger.DEBUG(logger.DError, err.Error())
