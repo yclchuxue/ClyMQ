@@ -9,6 +9,10 @@ type PartKey struct {
 	Err 		string `json:"err"`
 }
 
+type Parts struct {
+	PartKeys []PartKey  `json:"partkeys"`
+}
+
 type BrokerInfo struct {
 	Name      string `json:"name"`
 	Host_port string `json:"hsotport"`

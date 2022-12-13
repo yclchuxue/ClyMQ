@@ -5,6 +5,7 @@ import (
 	ser "ClyMQ/kitex_gen/api/client_operations"
 	"ClyMQ/kitex_gen/api/server_operations"
 	"ClyMQ/kitex_gen/api/zkserver_operations"
+	"ClyMQ/logger"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,7 +25,7 @@ type Consumer struct {
 	srv      server.Server
 	port     string
 	zkBroker zkserver_operations.Client
-	Brokers  map[string]server_operations.Client //broker_name--client
+	Brokers  map[string]*server_operations.Client //broker_name--client
 	// PTP_Topics 	map[string]
 	// Topic_Partions map[string]Info
 }
@@ -35,10 +36,11 @@ func NewConsumer(zkbroker string, name string, port string) (*Consumer, error) {
 		Name:    name,
 		State:   "alive",
 		port:    port,
-		Brokers: make(map[string]server_operations.Client),
+		Brokers: make(map[string]*server_operations.Client),
 		// Topic_Partions: make(map[string]Info),
 	}
 	var err error
+	fmt.Println("the zkbroker address is ", zkbroker, "the port is ", port)
 	C.zkBroker, err = zkserver_operations.NewClient(C.Name, client.WithHostPorts(zkbroker))
 
 	return &C, err
@@ -61,7 +63,7 @@ func (c *Consumer) Start_server() {
 	c.srv = svr
 	err := svr.Run()
 	if err != nil {
-		println(err.Error())
+		fmt.Println(err.Error())
 	}
 }
 
@@ -105,7 +107,7 @@ func (c *Consumer) Subscription(topic, partition string, option int8) (err error
 	return nil
 }
 
-func (c *Consumer) StartGet(info Info) (parts []PartKey, ret string, err error) {
+func (c *Consumer) StartGet(info Info) (partkeys []PartKey, ret string, err error) {
 
 	resp, err := c.zkBroker.ConStartGetBroker(context.Background(), &api.ConStartGetBrokRequest{
 		CliName:   c.Name,
@@ -122,16 +124,17 @@ func (c *Consumer) StartGet(info Info) (parts []PartKey, ret string, err error) 
 	// broks := make([]BrokerInfo, resp.Size)
 	// json.Unmarshal(resp.Broks, &broks)
 
-	parts = make([]PartKey, resp.Size)
+	// parts = make([]PartKey, resp.Size)
+	var parts Parts
 	err = json.Unmarshal(resp.Parts, &parts)
 	if err != nil {
 		return nil, "", err
 	}
-
+	logger.DEBUG(logger.DLog, "start get parts json is %v turn %v\n", resp.Parts, parts.PartKeys)
 	if info.Option == 1 || info.Option == 3 { //pub
-		ret, err = c.StartGetToBroker(parts, info)
+		ret, err = c.StartGetToBroker(parts.PartKeys, info)
 	}
-	return parts, ret, err
+	return parts.PartKeys, ret, err
 }
 
 func (c *Consumer) StartGetToBroker(parts []PartKey, info Info) (ret string, err error) {
@@ -160,30 +163,50 @@ func (c *Consumer) StartGetToBroker(parts []PartKey, info Info) (ret string, err
 				return ret, err
 			}
 			if info.Option == 1 { //ptp
-				c.Brokers[part.Broker_name] = bro_cli
+				c.Brokers[part.Broker_name] = &bro_cli
 
 				bro_cli.StarttoGet(context.Background(), rep)
 			}
 		}
 		//发送info
-		c.SendInfo(c.port, &bro_cli)
+		err = c.SendInfo(c.port, bro_cli)
+		if err != nil {
+			logger.DEBUG(logger.DError, err.Error())
+			return ret, err
+		}
 
 		if info.Option == 3 { //psb
-			bro_cli.StarttoGet(context.Background(), rep)
+			(*bro_cli).StarttoGet(context.Background(), rep)
 		}
 	}
 	return ret, nil
 }
 
+func (c *Consumer) GetCli(part PartKey) (cli *server_operations.Client, err error) {
+	cli, ok := c.Brokers[part.Broker_name]
+	if !ok {
+		bro_cli, err := server_operations.NewClient(c.Name, client.WithHostPorts(part.Broker_H_P))
+		if err != nil {
+			return nil, err
+		}
+		cli = &bro_cli
+		c.Brokers[part.Broker_name] = cli
+		logger.DEBUG(logger.DLog, "get cli(%v) fail, new client\n", part.Broker_name)
+	}
+
+	return cli, nil
+}
+
 //向broker索要信息
 func (c *Consumer) Pull(info Info) (int64, int64, []Msg, error) {
-	resp, err := info.Cli.Pull(context.Background(), &api.PullRequest{
+	resp, err := (*info.Cli).Pull(context.Background(), &api.PullRequest{
 		Consumer: c.Name,
 		Topic:    info.Topic,
 		Key:      info.Part,
 		Offset:   info.Offset,
 	})
 	if err != nil {
+		logger.DEBUG(logger.DError, err.Error())
 		return -1, -1, nil, err
 	}
 
@@ -211,7 +234,7 @@ type Info struct {
 	Topic  string
 	Part   string
 	Option int8
-	Cli    server_operations.Client
+	Cli    *server_operations.Client
 	Bufs   map[int64]*api.PubRequest
 }
 
