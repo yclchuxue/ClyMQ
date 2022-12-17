@@ -28,7 +28,7 @@ func NewFile(path_name string) (file *File, fd *os.File, Err string, err error) 
 		fd, err = CreateFile(path_name)
 		if err != nil {
 			Err = "CreatFileFail"
-			logger.DEBUG(logger.DError, err.Error())
+			logger.DEBUG(logger.DError, "%v\n", err.Error())
 			return nil, nil, Err, err
 		} 
 		// else {
@@ -37,7 +37,7 @@ func NewFile(path_name string) (file *File, fd *os.File, Err string, err error) 
 	} else {
 		fd, err = os.OpenFile(path_name, os.O_APPEND|os.O_RDWR, os.ModeAppend|os.ModePerm)
 		if err != nil {
-			logger.DEBUG(logger.DError, err.Error())
+			logger.DEBUG(logger.DError, "%v\n", err.Error())
 			Err = "OpenFile"
 			return nil, nil, Err, err
 		} 
@@ -56,15 +56,14 @@ func NewFile(path_name string) (file *File, fd *os.File, Err string, err error) 
 
 func CheckFile(path_name string) (file *File, fd *os.File, Err string, err error) {
 	if !CheckFileOrList(path_name) {
-
 		Err = "NotFile"
 		err = errors.New(Err)
-		logger.DEBUG(logger.DError, err.Error())
+		logger.DEBUG(logger.DError, "%v\n", err.Error())
 		return nil, nil, Err, err
 	} else {
-		fd, err = os.OpenFile(path_name, os.O_APPEND|os.O_RDWR, os.ModeAppend|os.ModePerm)
+		fd, err = os.OpenFile(path_name, os.O_RDONLY, 0666)
 		if err != nil {
-			logger.DEBUG(logger.DError, err.Error())
+			logger.DEBUG(logger.DError, "%v\n", err.Error())
 			Err = "OpenFile"
 			return nil, nil, Err, err
 		}
@@ -75,6 +74,9 @@ func CheckFile(path_name string) (file *File, fd *os.File, Err string, err error
 		filename:  path_name,
 		node_size: NODE_SIZE,
 	}
+
+	logger.DEBUG(logger.DLog, "the file is %v\n", file)
+
 	return file, fd, "ok", err
 }
 
@@ -91,12 +93,29 @@ func (f *File) Update(path, file_name string) error {
 	return MovName(OldFilePath, NewFilePath)
 }
 
-func (f *File) OpenFile() *os.File {
+func (f *File) OpenFileRead() *os.File {
+	// logger.DEBUG(logger.DLog, "the file name is %v\n", f.filename)
 	f.mu.RLock()
-	file, _ := CreateFile(f.filename)
+	fd, err := os.OpenFile(f.filename, os.O_RDONLY, 0666)
 	f.mu.RUnlock()
+	if err != nil {
+		logger.DEBUG(logger.DError, "%v\n", err.Error())
+		return nil
+	}	
 
-	return file
+	return fd
+}
+
+func (f *File) OpenFileWrite() *os.File {
+	f.mu.RLock()
+	fd, err := os.OpenFile(f.filename, os.O_APPEND|os.O_RDWR, os.ModeAppend|os.ModePerm)
+	f.mu.RUnlock()
+	if err != nil {
+		logger.DEBUG(logger.DError, "%v\n", err.Error())
+		return nil
+	}	
+
+	return fd
 }
 
 func (f *File) GetFirstIndex(file *os.File) int64 {
@@ -160,7 +179,7 @@ func (f *File) WriteFile(file *os.File, node Key, data_msg []byte) bool {
 	data_node := &bytes.Buffer{}
 	err := binary.Write(data_node, binary.BigEndian, node)
 	if err != nil {
-		logger.DEBUG(logger.DError, err.Error())
+		logger.DEBUG(logger.DError, "%v\n", err.Error())
 		logger.DEBUG(logger.DError, "%v turn bytes fail\n", node)
 		return false
 	}
@@ -263,7 +282,7 @@ func (f *File) FindOffset(file *os.File, index int64) (int64, error) {
 
 	offset := int64(0)
 	for {
-		// logger.DEBUG(logger.DdLog, "the node size is %v\n", NODE_SIZE)
+		logger.DEBUG(logger.DLog, "the file name is %v\n", f.filename)
 		f.mu.RLock()
 		size, err := file.ReadAt(data_node, offset)
 		f.mu.RUnlock()
@@ -278,7 +297,7 @@ func (f *File) FindOffset(file *os.File, index int64) (int64, error) {
 		buf := &bytes.Buffer{}
 		binary.Write(buf, binary.BigEndian, data_node)
 		binary.Read(buf, binary.BigEndian, &node)
-		// logger.DEBUG(logger.DdLog2, "the node is %v size is %v\n", node, size)
+		// logger.DEBUG(logger.DLog2, "the node is %v size is %v\n", node, size)
 		if node.End_index < index {
 			offset += int64(NODE_SIZE + node.Size)
 		} else {

@@ -126,7 +126,7 @@ type Part struct {
 }
 
 const (
-	OK    = "ok"
+	OK    = "OK"
 	TIOUT = "timeout"
 
 	NOTDO  = "notdo"
@@ -172,11 +172,11 @@ func NewPart(in info, file *File,  zkclient *zkserver_operations.Client) *Part {
 func (p *Part) Start(close chan *Part) {
 
 	// open file
-	p.fd = *p.file.OpenFile()
+	p.fd = *p.file.OpenFileRead()
 	offset, err := p.file.FindOffset(&p.fd, p.index)
 
 	if err != nil {
-		logger.DEBUG(logger.DError, err.Error())
+		logger.DEBUG(logger.DError, "%v\n", err.Error())
 	}
 
 	p.offset = offset
@@ -184,7 +184,7 @@ func (p *Part) Start(close chan *Part) {
 	for i := 0; i < BUFF_NUM; i++ { //加载 BUFF_NUM个block到队列中
 		err := p.AddBlock()
 		if err != nil {
-			logger.DEBUG(logger.DError, err.Error())
+			logger.DEBUG(logger.DError, "%v\n", err.Error())
 		}
 	}
 
@@ -260,7 +260,7 @@ func (p *Part) GetDone(close chan *Part) {
 				err := p.AddBlock()
 				p.mu.Lock()
 				if err != nil {
-					logger.DEBUG(logger.DError, err.Error())
+					logger.DEBUG(logger.DError, "%v\n", err.Error())
 				}
 
 				//文件消费完成，且文件不是生产者正在写入的文件
@@ -352,7 +352,7 @@ func (p *Part) SendOneBlock(name string, cli *client_operations.Client) {
 				err := p.Pub(cli, node, data_msg)
 
 				if err != nil { //超时等原因
-					logger.DEBUG(logger.DError, err.Error())
+					logger.DEBUG(logger.DError, "%v\n", err.Error())
 					num++
 					if num >= AGAIN_NUM { //超时三次，将不再向其发送
 						p.part_had <- Done{
@@ -421,6 +421,7 @@ func NewGroup(topic_name, cli_name string) *Group {
 	group := &Group{
 		rmu:        sync.RWMutex{},
 		topic_name: topic_name,
+		consumers: make(map[string]bool),
 	}
 	group.consumers[cli_name] = true
 	return group
@@ -496,16 +497,16 @@ type MSGS struct {
 }
 
 func NewNode(in info, file *File) *Node {
-
+	// logger.DEBUG(logger.DLog, "the file is %v\n", file)
 	no := &Node{
 		topic_name: in.topic_name,
 		part_name:  in.part_name,
 		option:     in.option,
-
+		// offset: 	,
 		file: file,
 	}
 
-	no.fd = *no.file.OpenFile()
+	no.fd = *no.file.OpenFileRead()
 	no.offset = -1
 
 	return no
@@ -517,7 +518,7 @@ func (no *Node) ReadMSGS(in info) (MSGS, error) {
 	if no.offset == -1 || no.start_index != in.offset {
 		no.offset, err = no.file.FindOffset(&no.fd, in.offset)
 		if err != nil {
-			logger.DEBUG(logger.DError, err.Error())
+			logger.DEBUG(logger.DError, "%v\n", err.Error())
 			return MSGS{}, err
 		}
 	}
@@ -528,7 +529,7 @@ func (no *Node) ReadMSGS(in info) (MSGS, error) {
 			if err == io.EOF {
 				break
 			}else{
-				logger.DEBUG(logger.DError, err.Error())
+				logger.DEBUG(logger.DError, "%v\n", err.Error())
 				return MSGS{}, err
 			}
 		}

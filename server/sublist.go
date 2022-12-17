@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	TOPIC_NIL_PTP_PUSH = 1 //PTP---Push
-	TOPIC_NIL_PTP_PULL = 2
-	TOPIC_KEY_PSB_PUSH = 3 //map[cli_name]offset in a partition
-	TOPIC_KEY_PSB_PULL = 4
+	TOPIC_NIL_PTP_PUSH = int8(1) //PTP---Push
+	TOPIC_NIL_PTP_PULL = int8(2)
+	TOPIC_KEY_PSB_PUSH = int8(3) //map[cli_name]offset in a partition
+	TOPIC_KEY_PSB_PULL = int8(4)
 
 	TOPIC_NIL_PSB = 10
 
@@ -95,7 +95,7 @@ func (t *Topic) CloseAcceptPart(in info) (start, end int64, ret string, err erro
 	}
 	start, end, ret, err = partition.CloseAcceptMessage(in)
 	if err != nil {
-		logger.DEBUG(logger.DError, err.Error())
+		logger.DEBUG(logger.DError, "%v\n", err.Error())
 	} else {
 		str, _ := os.Getwd()
 		str += "/" + t.Broker + "/" + in.topic_name + "/" + in.part_name + "/"
@@ -123,28 +123,31 @@ func (t *Topic) PrepareSendHandle(in info, zkclient *zkserver_operations.Client)
 	str += "/" + t.Broker + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
 	file, ok := t.Files[str]
 	if !ok {
-		file, fd, Err, err := CheckFile(str)
+		file_ptr, fd, Err, err := CheckFile(str)
 		if err != nil {
 			return Err, err
 		}
 		fd.Close()
+		file = file_ptr
 		t.Files[str] = file
 	}
 
 	//检查或创建sub
 	sub, ok := t.subList[sub_name]
 	if !ok {
-		var sub = NewSubScription(in, sub_name, t.Parts, t.Files)
+	 	sub = NewSubScription(in, sub_name, t.Parts, t.Files)
 		t.subList[sub_name] = sub
 	}
 	//在sub中创建对应文件的config，来等待startget
 	t.rmu.Unlock()
-	if in.option == PTP_PUSH {
+	if in.option == TOPIC_NIL_PTP_PUSH {
 		ret, err = sub.AddPTPConfig(in, partition, file, zkclient)
-	} else if in.option == PSB_PUSH {
+	} else if in.option == TOPIC_KEY_PSB_PUSH {
 		sub.AddPSBConfig(in, in.part_name, file, zkclient)
-	} else if in.option == PTP_PULL || in.option == PSB_PULL { //PTP_PULL  ||  PSB_PULL
+	} else if in.option == TOPIC_NIL_PTP_PULL || in.option == TOPIC_KEY_PSB_PULL { //PTP_PULL  ||  PSB_PULL
 		//在sub中创建一个Node用来保存该consumer的Pull的文件描述符等信息
+		logger.DEBUG(logger.DLog, "the file is %v\n", file)
+
 		sub.AddNode(in, file)
 	}
 
@@ -179,22 +182,25 @@ func (t *Topic) HandleParttitions(Partitions map[string]ParNodeInfo) {
 	}
 }
 
-func (t *Topic) GetFile(in info) *File {
+func (t *Topic) GetFile(in info) (File *File, Fd *os.File ){
 	t.rmu.Lock()
 	str, _ := os.Getwd()
 	str += "/" + t.Broker + "/" + in.topic_name + "/" + in.part_name + "/" + in.file_name
-	File, ok := t.Files[str]
+	file, ok := t.Files[str]
 	if !ok {
 		file, fd, Err, err := NewFile(str)
 		if err != nil {
 			logger.DEBUG(logger.DError, "Err(%v), err(%v)", Err, err.Error())
-			return nil
+			return nil, nil
 		}
-		fd.Close()
+		// fd.Close()
+		Fd = fd
 		t.Files[str] = file
+	}else{
+		Fd = file.OpenFileWrite()
 	}
 	t.rmu.Unlock()
-	return File
+	return file, Fd
 }
 
 func (t *Topic) GetParts() map[string]*Partition {
@@ -233,12 +239,13 @@ func (t *Topic) addMessage(in info) error {
 }
 
 func (t *Topic) PullMessage(in info) (MSGS, error) {
+	logger.DEBUG(logger.DLog, "the info %v\n", in)
 	sub_name := GetStringfromSub(in.topic_name, in.part_name, in.option)
 	t.rmu.RLock()
 	sub, ok := t.subList[sub_name]
 	t.rmu.RUnlock()
 	if !ok {
-		logger.DEBUG(logger.DError, "this topic is not have sub(%v)\n", sub_name)
+		logger.DEBUG(logger.DError, "this topic(%v) is not have sub(%v) the sublist is %v\n", t.Name, sub_name, t.subList)
 		return MSGS{}, errors.New("this topic is not have this sub")
 	}
 
@@ -489,6 +496,7 @@ func NewSubScription(in info, name string, parts map[string]*Partition, files ma
 		Files:       files,
 		PTP_config:  nil,
 		PSB_configs: make(map[string]*PSBConfig_PUSH),
+		nodes: make(map[string]*Node),
 	}
 
 	group := NewGroup(in.part_name, in.consumer)
@@ -531,6 +539,7 @@ func (s *SubScription) AddPSBConfig(in info, part_name string, file *File, zkcli
 
 func (s *SubScription) AddNode(in info, file *File) {
 	str := in.topic_name + in.part_name + in.consumer
+//	logger.DEBUG(logger.DLog, "str is %v\n", str)
 	s.rmu.Lock()
 	_, ok := s.nodes[str]
 	if !ok {
@@ -702,7 +711,7 @@ func (c *Config) AddCli(cli_name string, cli *client_operations.Client) {
 
 	err := c.consistent.Add(cli_name, 1)
 	if err != nil {
-		logger.DEBUG(logger.DError, err.Error())
+		logger.DEBUG(logger.DError, "%v\n", err.Error())
 	}
 
 	c.mu.Unlock()
@@ -718,7 +727,7 @@ func (c *Config) DeleteCli(part_name string, cli_name string) {
 	delete(c.Clis, cli_name)
 
 	err := c.consistent.Reduce(cli_name)
-	logger.DEBUG(logger.DError, err.Error())
+	logger.DEBUG(logger.DError, "%v\n", err.Error())
 
 	c.mu.Unlock()
 
