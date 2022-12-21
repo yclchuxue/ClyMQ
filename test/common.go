@@ -4,61 +4,22 @@ import (
 	Server "ClyMQ/server"
 	"ClyMQ/zookeeper"
 	"fmt"
-	"net"
 	"strconv"
 	"testing"
 
 	client3 "ClyMQ/client/clients"
-
-	"github.com/cloudwego/kitex/server"
 )
 
 const ()
 
 
-func NewBrokerAndStart(t *testing.T, zkinfo zookeeper.ZkInfo, opt Server.Options) *Server.RPCServer {
-	//start the broker server
-	// fmt.Println("Broker_host_Poet", opt.Broker_Host_Port)
-	addr_bro, _ := net.ResolveTCPAddr("tcp", opt.Broker_Host_Port)
-	addr_raf, _ := net.ResolveTCPAddr("tcp", opt.Raft_Host_Port)
-	var opts_bro, opts_raf []server.Option
-	opts_bro = append(opts_bro, server.WithServiceAddr(addr_bro))
-	opts_raf = append(opts_raf,  server.WithServiceAddr(addr_raf))
-
-	rpcServer := Server.NewRpcServer(zkinfo)
-
-	go func() {
-		err := rpcServer.Start(opts_bro, nil, opts_raf, opt)
-		if err != nil {
-			t.Log(err)
-		}
-	}()
-
-	return &rpcServer
-}
-
-func NewZKServerAndStart(t *testing.T, zkinfo zookeeper.ZkInfo, opt Server.Options) *Server.RPCServer {
-	//start the zookeeper server
-	addr_zks, _ := net.ResolveTCPAddr("tcp", opt.Zkserver_Host_Port)
-	var opts_zks []server.Option
-	opts_zks = append(opts_zks, server.WithServiceAddr(addr_zks))
-
-	rpcServer := Server.NewRpcServer(zkinfo)
-
-	go func() {
-		err := rpcServer.Start(nil, opts_zks, nil, opt)
-		if err != nil {
-			t.Log(err)
-		}
-	}()
-
-	return &rpcServer
-}
-
 func NewConsumerAndStart(t *testing.T, consumer_port, zkbroker, name string) *client3.Consumer {
 	fmt.Println("Start Consumser")
 
-	consumer, _ := client3.NewConsumer(zkbroker, name, consumer_port)
+	consumer, err := client3.NewConsumer(zkbroker, name, consumer_port)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
 	go consumer.Start_server()
 
 	return consumer
@@ -82,7 +43,7 @@ func StartBrokers(t *testing.T, numbers int) (brokers []*Server.RPCServer) {
 
 	index := 0
 	for index < numbers {
-		broker := NewBrokerAndStart(t, zookeeper.ZkInfo{
+		broker := Server.NewBrokerAndStart(zookeeper.ZkInfo{
 			HostPorts: zookeeper_port,
 			Timeout:   20,
 			Root:      "/ClyMQ",
@@ -106,7 +67,7 @@ func StartZKServer(t *testing.T) *Server.RPCServer {
 	fmt.Println("Start ZKServer")
 	
 	zookeeper_port := []string{"127.0.0.1:2181"}
-	zkserver := NewZKServerAndStart(t, zookeeper.ZkInfo{
+	zkserver := Server.NewZKServerAndStart(zookeeper.ZkInfo{
 		HostPorts: zookeeper_port,
 		Timeout:   20,
 		Root:      "/ClyMQ",
