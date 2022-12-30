@@ -82,5 +82,5 @@ if err != nil {
 ```
 consumer使用Pull拉取信息时需要传入info参数，该参数在上面已经有了介绍，可以通过GetCli函数获取client句柄。
 
-## 具体方法
-具体使用方法请参考测试；
+## 详细使用方法请参考测试文件
+[consumer_test.go](https://github.com/yclchuxue/ClyMQ/blob/master/test/consumer_test.go)

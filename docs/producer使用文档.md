@@ -9,7 +9,7 @@
 * 设置Partition的状态，选择高可用的集中模式
 
 ## NewProducer
-在程序中加入 ClyMQ/client/clients 包，使用 NewProducer 创建一个生产者
+在程序中导入 ClyMQ/client/clients 包，使用 NewProducer 创建一个生产者
 
 ```
 Producer, err := client3.NewProducer(zkbroker, name)
@@ -75,3 +75,6 @@ type Message struct {
 	Msg        []byte       // 信息所转换的byte数组
 }
 ```
+
+## 详细使用方法请参考测试文件
+[producer_test.go](https://github.com/yclchuxue/ClyMQ/blob/master/test/producer_test.go)
