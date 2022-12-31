@@ -23,6 +23,7 @@ struct PullRequest {
     3: string key
     4: i64    offset
     5: i8     size
+    6: i8     option
 }
 
 struct PullResponse {
@@ -272,13 +273,26 @@ struct SubResponse {
     1: bool ret
 }
 
-struct UpdateOffsetRequest{
+struct UpdatePTPOffsetRequest{
     1: string   topic
     2: string   part
     3: i64      offset
 }
 
-struct UpdateOffsetResponse{
+struct UpdatePTPOffsetResponse{
+    1: bool     ret
+}
+
+struct UpdateDupRequest{
+    1: string   topic
+    2: string   part
+    3: string   BrokerName
+    4: string   BlockName
+    5: i64      EndIndex
+    6: bool     leader
+}
+
+struct UpdateDupResponse{
     1: bool     ret
 }
 
@@ -328,7 +342,8 @@ service ZkServer_Operations {
     //broker
     BroInfoResponse         BroInfo(        1: BroInfoRequest       req)  //broker 发送info让zkserver连接broker
     //broker更新topic-partition的offset
-    UpdateOffsetResponse    UpdateOffset(   1: UpdateOffsetRequest  req)
+    UpdatePTPOffsetResponse    UpdatePTPOffset(   1: UpdatePTPOffsetRequest  req)
+    UpdateDupResponse       UpdateDup(1: UpdateDupRequest req)
     //broker成为新的leader
     BecomeLeaderResponse    BecomeLeader(   1: BecomeLeaderRequest  req)
     //broker获取新的Leader

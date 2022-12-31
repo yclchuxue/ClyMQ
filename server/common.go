@@ -3,9 +3,12 @@ package server
 import (
 	"ClyMQ/kitex_gen/api/client_operations"
 	"ClyMQ/logger"
+	"ClyMQ/zookeeper"
 	"net"
 	"os"
 	"runtime"
+
+	Ser "github.com/cloudwego/kitex/server"
 )
 
 type PartKey struct {
@@ -69,6 +72,46 @@ const (
 	// PSB_PUSH = 3
 	// PSB_PULL = 4
 )
+
+func NewBrokerAndStart(zkinfo zookeeper.ZkInfo, opt Options) *RPCServer {
+	//start the broker server
+	// fmt.Println("Broker_host_Poet", opt.Broker_Host_Port)
+	addr_bro, _ := net.ResolveTCPAddr("tcp", opt.Broker_Host_Port)
+	addr_raf, _ := net.ResolveTCPAddr("tcp", opt.Raft_Host_Port)
+	var opts_bro, opts_raf []Ser.Option
+	opts_bro = append(opts_bro, Ser.WithServiceAddr(addr_bro))
+	opts_raf = append(opts_raf,  Ser.WithServiceAddr(addr_raf))
+
+	rpcServer := NewRpcServer(zkinfo)
+
+	go func() {
+		err := rpcServer.Start(opts_bro, nil, opts_raf, opt)
+		if err != nil {
+			logger.DEBUG(logger.DError, "%v\n", err)
+		}
+	}()
+
+	return &rpcServer
+}
+
+func NewZKServerAndStart(zkinfo zookeeper.ZkInfo, opt Options) *RPCServer {
+	//start the zookeeper server
+	addr_zks, _ := net.ResolveTCPAddr("tcp", opt.Zkserver_Host_Port)
+	var opts_zks []Ser.Option
+	opts_zks = append(opts_zks, Ser.WithServiceAddr(addr_zks))
+
+	rpcServer := NewRpcServer(zkinfo)
+
+	go func() {
+		err := rpcServer.Start(nil, opts_zks, nil, opt)
+		if err != nil {
+			logger.DEBUG(logger.DError, "%v\n", err)
+		}
+	}()
+
+	return &rpcServer
+}
+
 
 func GetIpport() string {
 	interfaces, err := net.Interfaces()
