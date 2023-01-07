@@ -107,33 +107,85 @@ func (s *RPCServer) Push(ctx context.Context, req *api.PushRequest) (resp *api.P
 	}, nil
 }
 
-func (s *RPCServer) Pull(ctx context.Context, req *api.PullRequest) (resp *api.PullResponse, err error) {
-	Err := "ok"
-	ret, err := s.server.PullHandle(info{
-		consumer:   req.Consumer,
-		topic_name: req.Topic,
-		part_name:  req.Key,
-		size:       req.Size,
-		option: 	req.Option,
-		offset:     req.Offset,
+//producer 获取该向那个broker发送信息
+func (s *RPCServer) ProGetBroker(ctx context.Context, req *api.ProGetBrokRequest) (r *api.ProGetBrokResponse, err error) {
+	info := s.zkserver.ProGetBroker(Info_in{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
 	})
-	if err != nil {
-		if err == io.EOF && ret.size == 0 {
-			Err = "file EOF"
-		} else {
-			logger.DEBUG(logger.DError, "%v\n", err.Error())
-			return &api.PullResponse{
-				Ret: false,
-			}, err
-		}
+
+	if info.Err != nil {
+		return &api.ProGetBrokResponse{
+			Ret: false,
+		}, info.Err
 	}
 
-	return &api.PullResponse{
-		Msgs:       ret.array,
-		StartIndex: ret.start_index,
-		EndIndex:   ret.end_index,
-		Size:       ret.size,
-		Err:        Err,
+	return &api.ProGetBrokResponse{
+		Ret:            true,
+		BrokerHostPort: info.bro_host_port,
+	}, nil
+}
+
+//producer--->zkserver
+//先在zookeeper上创建一个Topic，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
+func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest) (r *api.CreateTopicResponse, err error) {
+	info := s.zkserver.CreateTopic(Info_in{
+		topic_name: req.TopicName,
+	})
+
+	if info.Err != nil {
+		return &api.CreateTopicResponse{
+			Ret: false,
+			Err: info.Err.Error(),
+		}, info.Err
+	}
+
+	return &api.CreateTopicResponse{
+		Ret: true,
+		Err: "ok",
+	}, nil
+}
+
+//producer--->zkserver
+//先在zookeeper上创建一个Partition，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
+func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) (r *api.CreatePartResponse, err error) {
+	info := s.zkserver.CreatePart(Info_in{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
+	})
+
+	if info.Err != nil {
+		return &api.CreatePartResponse{
+			Ret: false,
+			Err: info.Err.Error(),
+		}, info.Err
+	}
+
+	return &api.CreatePartResponse{
+		Ret: true,
+		Err: "ok",
+	}, nil
+}
+
+//producer--->zkserver
+func (s *RPCServer) SetPartitionState(ctx context.Context, req *api.SetPartitionStateRequest) (r *api.SetPartitionStateResponse, err error) {
+	info := s.zkserver.SetPartitionState(Info_in{
+		topic_name: req.Topic,
+		part_name:  req.Partition,
+		option:     req.Option,
+		dupnum:     req.Dupnum,
+	})
+
+	if info.Err != nil {
+		return &api.SetPartitionStateResponse{
+			Ret: false,
+			Err: info.Err.Error(),
+		}, info.Err
+	}
+
+	return &api.SetPartitionStateResponse{
+		Ret: true,
+		Err: "ok",
 	}, nil
 }
 
@@ -165,84 +217,38 @@ func (s *RPCServer) StarttoGet(ctx context.Context, req *api.InfoGetRequest) (re
 	return &api.InfoGetResponse{Ret: false}, err
 }
 
-//producer 获取该向那个broker发送信息
-func (s *RPCServer) ProGetBroker(ctx context.Context, req *api.ProGetBrokRequest) (r *api.ProGetBrokResponse, err error) {
-	info := s.zkserver.ProGetBroker(Info_in{
-		topic_name: req.TopicName,
-		part_name:  req.PartName,
-	})
-
-	if info.Err != nil {
-		return &api.ProGetBrokResponse{
-			Ret: false,
-		}, info.Err
-	}
-
-	return &api.ProGetBrokResponse{
-		Ret:            true,
-		BrokerHostPort: info.bro_host_port,
-	}, nil
-}
-
-//先在zookeeper上创建一个Topic，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
-func (s *RPCServer) CreateTopic(ctx context.Context, req *api.CreateTopicRequest) (r *api.CreateTopicResponse, err error) {
-	info := s.zkserver.CreateTopic(Info_in{
-		topic_name: req.TopicName,
-	})
-
-	if info.Err != nil {
-		return &api.CreateTopicResponse{
-			Ret: false,
-			Err: info.Err.Error(),
-		}, info.Err
-	}
-
-	return &api.CreateTopicResponse{
-		Ret: true,
-		Err: "ok",
-	}, nil
-}
-
-//先在zookeeper上创建一个Partition，当生产该信息时，或消费信息时再有zkserver发送信息到broker让broker创建
-func (s *RPCServer) CreatePart(ctx context.Context, req *api.CreatePartRequest) (r *api.CreatePartResponse, err error) {
-	info := s.zkserver.CreatePart(Info_in{
-		topic_name: req.TopicName,
-		part_name:  req.PartName,
-	})
-
-	if info.Err != nil {
-		return &api.CreatePartResponse{
-			Ret: false,
-			Err: info.Err.Error(),
-		}, info.Err
-	}
-
-	return &api.CreatePartResponse{
-		Ret: true,
-		Err: "ok",
-	}, nil
-}
-
-func (s *RPCServer) SetPartitionState(ctx context.Context, req *api.SetPartitionStateRequest) (r *api.SetPartitionStateResponse, err error) {
-	info := s.zkserver.SetPartitionState(Info_in{
+//consumer--->broker server
+func (s *RPCServer) Pull(ctx context.Context, req *api.PullRequest) (resp *api.PullResponse, err error) {
+	Err := "ok"
+	ret, err := s.server.PullHandle(info{
+		consumer:   req.Consumer,
 		topic_name: req.Topic,
-		part_name:  req.Partition,
-		option:     req.Option,
-		dupnum:     req.Dupnum,
+		part_name:  req.Key,
+		size:       req.Size,
+		option: 	req.Option,
+		offset:     req.Offset,
 	})
-
-	if info.Err != nil {
-		return &api.SetPartitionStateResponse{
-			Ret: false,
-			Err: info.Err.Error(),
-		}, info.Err
+	if err != nil {
+		if err == io.EOF && ret.size == 0 {
+			Err = "file EOF"
+		} else {
+			logger.DEBUG(logger.DError, "%v\n", err.Error())
+			return &api.PullResponse{
+				Ret: false,
+				Err: err.Error(),
+			}, err
+		}
 	}
 
-	return &api.SetPartitionStateResponse{
-		Ret: true,
-		Err: "ok",
+	return &api.PullResponse{
+		Msgs:       ret.array,
+		StartIndex: ret.start_index,
+		EndIndex:   ret.end_index,
+		Size:       ret.size,
+		Err:        Err,
 	}, nil
 }
+
 
 // consumer---->zkserver
 func (s *RPCServer) ConStartGetBroker(ctx context.Context, req *api.ConStartGetBrokRequest) (r *api.ConStartGetBrokResponse, err error) {
@@ -263,6 +269,47 @@ func (s *RPCServer) ConStartGetBroker(ctx context.Context, req *api.ConStartGetB
 		Size:  int64(size),
 		Parts: parts,
 	}, nil
+}
+
+//consumer---->zkserver
+//订阅
+func (s *RPCServer) Sub(ctx context.Context, req *api.SubRequest) (resp *api.SubResponse, err error) {
+
+	err = s.zkserver.SubHandle(Info_in{
+		cli_name:   req.Consumer,
+		topic_name: req.Topic,
+		part_name:  req.Key,
+		option:     req.Option,
+	})
+
+	if err == nil {
+		return &api.SubResponse{
+			Ret: true,
+		}, nil
+	}
+
+	return &api.SubResponse{Ret: false}, err
+}
+
+//consumer and producer -----> zkserver
+func (s *RPCServer) GetNewLeader(ctx context.Context, req *api.GetNewLeaderRequest) (r *api.GetNewLeaderResponse, err error) {
+	info, err := s.zkserver.GetNewLeader(Info_in{
+		topic_name: req.TopicName,
+		part_name:  req.PartName,
+		blockname:  req.BlockName,
+	})
+
+	if err != nil {
+		return &api.GetNewLeaderResponse{
+			Ret: false,
+		}, err
+	} else {
+		return &api.GetNewLeaderResponse{
+			Ret:          true,
+			LeaderBroker: info.broker_name,
+			HostPort:     info.bro_host_port,
+		}, nil
+	}
 }
 
 //broker---->zkserver
@@ -298,6 +345,7 @@ func (s *RPCServer) UpdatePTPOffset(ctx context.Context, req *api.UpdatePTPOffse
 	}, nil
 }
 
+//broker---->zkserver
 func (s *RPCServer) UpdateDup(ctx context.Context, req *api.UpdateDupRequest) (r *api.UpdateDupResponse, err error) {
 	err = s.zkserver.UpdateDupNode(Info_in{
 		topic_name: req.Topic,
@@ -331,24 +379,22 @@ func (s *RPCServer) BroGetConfig(ctx context.Context, req *api.BroGetConfigReque
 	}, nil
 }
 
-//consumer---->zkserver
-//订阅
-func (s *RPCServer) Sub(ctx context.Context, req *api.SubRequest) (resp *api.SubResponse, err error) {
-
-	err = s.zkserver.SubHandle(Info_in{
-		cli_name:   req.Consumer,
+//broker---->zkserver
+func (s *RPCServer) BecomeLeader(ctx context.Context, req *api.BecomeLeaderRequest) (r *api.BecomeLeaderResponse, err error) {
+	err = s.zkserver.BecomeLeader(Info_in{
+		cli_name:   req.Broker,
 		topic_name: req.Topic,
-		part_name:  req.Key,
-		option:     req.Option,
+		part_name:  req.Partition,
 	})
-
-	if err == nil {
-		return &api.SubResponse{
+	if err != nil {
+		return &api.BecomeLeaderResponse{
+			Ret: false,
+		}, err
+	} else {
+		return &api.BecomeLeaderResponse{
 			Ret: true,
 		}, nil
 	}
-
-	return &api.SubResponse{Ret: false}, err
 }
 
 //zkserver---->broker server
@@ -446,43 +492,6 @@ func (s *RPCServer) PrepareSend(ctx context.Context, req *api.PrepareSendRequest
 		Ret: true,
 		Err: ret,
 	}, nil
-}
-
-func (s *RPCServer) BecomeLeader(ctx context.Context, req *api.BecomeLeaderRequest) (r *api.BecomeLeaderResponse, err error) {
-	err = s.zkserver.BecomeLeader(Info_in{
-		cli_name:   req.Broker,
-		topic_name: req.Topic,
-		part_name:  req.Partition,
-	})
-	if err != nil {
-		return &api.BecomeLeaderResponse{
-			Ret: false,
-		}, err
-	} else {
-		return &api.BecomeLeaderResponse{
-			Ret: true,
-		}, nil
-	}
-}
-
-func (s *RPCServer) GetNewLeader(ctx context.Context, req *api.GetNewLeaderRequest) (r *api.GetNewLeaderResponse, err error) {
-	info, err := s.zkserver.GetNewLeader(Info_in{
-		topic_name: req.TopicName,
-		part_name:  req.PartName,
-		blockname:  req.BlockName,
-	})
-
-	if err != nil {
-		return &api.GetNewLeaderResponse{
-			Ret: false,
-		}, err
-	} else {
-		return &api.GetNewLeaderResponse{
-			Ret:          true,
-			LeaderBroker: info.broker_name,
-			HostPort:     info.bro_host_port,
-		}, nil
-	}
 }
 
 //zkserver---->broker server

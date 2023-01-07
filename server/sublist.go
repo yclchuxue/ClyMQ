@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"os"
 	"sort"
@@ -135,6 +136,7 @@ func (t *Topic) PrepareSendHandle(in info, zkclient *zkserver_operations.Client)
 	//检查或创建sub
 	sub, ok := t.subList[sub_name]
 	if !ok {
+		logger.DEBUG(logger.DLog, "%v create a new sub(%v)\n", t.Broker, sub_name)
 	 	sub = NewSubScription(in, sub_name, t.Parts, t.Files)
 		t.subList[sub_name] = sub
 	}
@@ -245,8 +247,10 @@ func (t *Topic) PullMessage(in info) (MSGS, error) {
 	sub, ok := t.subList[sub_name]
 	t.rmu.RUnlock()
 	if !ok {
-		logger.DEBUG(logger.DError, "this topic(%v) is not have sub(%v) the sublist is %v\n", t.Name, sub_name, t.subList)
-		return MSGS{}, errors.New("this topic is not have this sub")
+		// str := ""
+		str := fmt.Sprintf("%v this topic(%v) is not have sub(%v) the sublist is %v for %v", t.Broker, t.Name, sub_name, t.subList, in.consumer)
+		logger.DEBUG(logger.DError, "%v\n", str)
+		return MSGS{}, errors.New(str)
 	}
 
 	return sub.PullMsgs(in)

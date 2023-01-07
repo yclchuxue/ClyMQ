@@ -296,7 +296,22 @@ func (z *ZkServer) SetPartitionState(info Info_in) Info_out {
 
 			Dups, data_brokers = z.GetDupsFromConsist(info)
 
+			//选择一个broker节点作为leader
 			LeaderBroker, err := z.zk.GetBrokerNode(Dups[0].BrokerName)
+			if err != nil {
+				logger.DEBUG(logger.DError, "%v\n", err.Error())
+				return Info_out{
+					Err: err,
+				}
+			}
+
+			// 更新newblock中的leader
+			err = z.BecomeLeader(Info_in{
+				cli_name:   Dups[0].BrokerName,
+				topic_name: info.topic_name,
+				part_name:  info.part_name,
+			})
+
 			if err != nil {
 				logger.DEBUG(logger.DError, "%v\n", err.Error())
 				return Info_out{
@@ -307,7 +322,7 @@ func (z *ZkServer) SetPartitionState(info Info_in) Info_out {
 			for _, dupnode := range Dups {
 				bro_cli, ok := z.Brokers[dupnode.BrokerName]
 				if !ok {
-					logger.DEBUG(logger.DLog, "this partition(%v) leader broker is not connected\n", info.part_name)
+					logger.DEBUG(logger.DError, "this partition(%v) leader broker is not connected\n", info.part_name)
 				} else {
 					//开启fetch机制
 					resp3, err := bro_cli.AddFetchPartition(context.Background(), &api.AddFetchPartitionRequest{
@@ -847,7 +862,7 @@ func (z *ZkServer) CloseAcceptPartition(topicname, partname, brokername string, 
 
 func (z *ZkServer) GetNewLeader(info Info_in) (Info_out, error) {
 	block_path := z.zk.TopicRoot + "/" + info.topic_name + "/" + "Partitions" + "/" + info.part_name + "/" + info.blockname
-
+	logger.DEBUG(logger.DLog, "get new leader broker the path is %v\n", block_path)
 	BlockNode, err := z.zk.GetBlockNode(block_path)
 	if err != nil {
 		logger.DEBUG(logger.DError, "%v\n", err.Error())
@@ -855,6 +870,7 @@ func (z *ZkServer) GetNewLeader(info Info_in) (Info_out, error) {
 	var LeaderBroker zookeeper.BrokerNode
 	//需要检查Leader是否在线，若不在线需要更换leader
 	// broker_path := z.zk.BrokerRoot + "/" + BlockNode.LeaderBroker
+	logger.DEBUG(logger.DLog, "zkserver checkout leader broker %v online?\n", BlockNode.LeaderBroker)
 	ret := z.zk.CheckBroker(BlockNode.LeaderBroker)
 	if ret {
 		LeaderBroker, err = z.zk.GetBrokerNode(BlockNode.LeaderBroker)

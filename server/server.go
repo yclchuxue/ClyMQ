@@ -13,6 +13,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/server"
@@ -326,6 +327,7 @@ func (s *Server) PrepareSendHandle(in info) (ret string, err error) {
 	s.mu.Lock()
 	topic, ok := s.topics[in.topic_name]
 	if !ok {
+		logger.DEBUG(logger.DLog, "%v not have topic(%v), create topic\n", s.Name, in.topic_name)
 		topic = NewTopic(s.Name, in.topic_name)
 		s.topics[in.topic_name] = topic
 	}
@@ -394,6 +396,13 @@ func (s *Server) CloseRaftHandle(in info) (ret string, err error) {
 func (s *Server) AddFetchHandle(in info) (ret string, err error) {
 	//检测该Partition的fetch机制是否已经启动
 
+	//检查该topic_partition 是否准备昊accept信息
+	ret, err = s.PrepareAcceptHandle(in)
+	if err != nil {
+		logger.DEBUG(logger.DError, "%v err is %v\n", ret, err)
+		return ret, err
+	}
+
 	if in.LeaderBroker == s.Name {
 		//Leader Broker将准备好接收follower的Pull请求
 		s.mu.RLock()
@@ -404,6 +413,7 @@ func (s *Server) AddFetchHandle(in info) (ret string, err error) {
 			logger.DEBUG(logger.DError, "%v, info(%v)\n", ret, in)
 			return ret, errors.New(ret)
 		}
+		logger.DEBUG(logger.DLog, "%v prepare send for follower brokers\n", s.Name)
 		//给每个follower broker准备node（PSB_PULL），等待pull请求
 		for BrokerName := range in.brokers {
 			ret, err = topic.PrepareSendHandle(info{
@@ -411,7 +421,7 @@ func (s *Server) AddFetchHandle(in info) (ret string, err error) {
 				part_name:  in.part_name,
 				file_name:  in.file_name,
 				consumer:   BrokerName,
-				option:     4, //PSB_PULL
+				option:     TOPIC_KEY_PSB_PULL, //PSB_PULL
 			}, &s.zkclient)
 			if err != nil {
 				logger.DEBUG(logger.DError, "%v\n", err.Error())
@@ -419,16 +429,21 @@ func (s *Server) AddFetchHandle(in info) (ret string, err error) {
 		}
 		return ret, err
 	} else {
+
+		time.Sleep(time.Microsecond * 100)
+
 		str := in.topic_name + in.part_name + in.file_name
 		s.mu.Lock()
 		broker, ok := s.brokers_fetch[in.LeaderBroker]
 		if !ok {
-			broker, err := server_operations.NewClient(s.Name, client.WithHostPorts(in.HostPort))
+			logger.DEBUG(logger.DLog, "%v connection the leader broker %v the HP(%v)\n", s.Name, in.LeaderBroker, in.HostPort)
+			bro_ptr, err := server_operations.NewClient(s.Name, client.WithHostPorts(in.HostPort))
 			if err != nil {
 				logger.DEBUG(logger.DError, "%v\n", err.Error())
 				return err.Error(), err
 			}
-			s.brokers_fetch[in.LeaderBroker] = &broker
+			s.brokers_fetch[in.LeaderBroker] = &bro_ptr
+			broker = &bro_ptr
 		}
 
 		_, ok = s.parts_fetch[str]
@@ -614,7 +629,7 @@ func (s *Server) PullHandle(in info) (MSGS, error) {
 		若该请求属于PTP则
 		读取index，获得上次的index，写入zookeeper中
 	*/
-	logger.DEBUG(logger.DLog, "the in.op(%v) TOP_PTP_PULL(%v)\n", in.option, TOPIC_NIL_PTP_PULL)
+	logger.DEBUG(logger.DLog, "%v get pull request the in.op(%v) TOP_PTP_PULL(%v)\n", s.Name, in.option, TOPIC_NIL_PTP_PULL)
 	if in.option == TOPIC_NIL_PTP_PULL {
 		s.zkclient.UpdatePTPOffset(context.Background(), &api.UpdatePTPOffsetRequest{
 			Topic:  in.topic_name,
@@ -649,6 +664,8 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 		return err.Error(), err
 	}
 
+	logger.DEBUG(logger.DLog2, "the cli is %v\n", cli)
+
 	if in.file_name != "Nowfile.txt" {
 		//当文件名不为nowfile时
 		//创建一partition, 并向该File中写入内容
@@ -665,13 +682,16 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 					Topic:    in.topic_name,
 					Key:      in.part_name,
 					Offset:   index,
+					Size:     10,
+					Option:   TOPIC_KEY_PSB_PULL,
 				})
 				num := len(in.file_name)
 				if err != nil {
 					ice++
-					logger.DEBUG(logger.DError, "Err %v, err(%v)\n", resp.Err, err.Error())
+					logger.DEBUG(logger.DError, "Err %v, err(%v)\n", resp, err.Error())
 
 					if ice >= 3 {
+						time.Sleep(time.Second * 3)
 						//询问新的Leader
 						resp, err := s.zkclient.GetNewLeader(context.Background(), &api.GetNewLeaderRequest{
 							TopicName: in.topic_name,
@@ -684,7 +704,7 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 						s.mu.Lock()
 						_, ok := s.brokers_fetch[in.topic_name+in.part_name]
 						if !ok {
-							logger.DEBUG(logger.DLog, "this broker(%v) is not connected\n")
+							logger.DEBUG(logger.DLog, "this broker(%v) is not connected\n", s.Name)
 							leader_bro, err := server_operations.NewClient(s.Name, client.WithHostPorts(resp.HostPort))
 							if err != nil {
 								logger.DEBUG(logger.DError, "%v\n", err.Error())
@@ -760,6 +780,8 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 					Topic:    in.topic_name,
 					Key:      in.part_name,
 					Offset:   index,
+					Size:     10,
+					Option:   TOPIC_KEY_PSB_PULL,
 				})
 
 				if err != nil {
@@ -793,27 +815,35 @@ func (s *Server) FetchMsg(in info, cli *server_operations.Client, topic *Topic) 
 					continue
 				}
 				ice = 0
-				msgs := make([]Message, resp.Size)
-				json.Unmarshal(resp.Msgs, &msgs)
 
-				start_index := resp.StartIndex
-				for _, msg := range msgs {
+				if resp.Size == 0 {
 
-					if index == start_index {
-						err := topic.addMessage(info{
-							topic_name: in.topic_name,
-							part_name:  in.part_name,
-							size:       msg.Size,
-							message:    msg.Msg,
-							BrokerName: s.Name,
-							zkclient:   &s.zkclient,
-							file_name:  "NowBlock.txt",
-						})
-						if err != nil {
-							logger.DEBUG(logger.DError, "%v\n", err.Error())
+					//等待新消息的生产
+
+					time.Sleep(time.Second * 10)
+				}else{
+					msgs := make([]Message, resp.Size)
+					json.Unmarshal(resp.Msgs, &msgs)
+
+					start_index := resp.StartIndex
+					for _, msg := range msgs {
+
+						if index == start_index {
+							err := topic.addMessage(info{
+								topic_name: in.topic_name,
+								part_name:  in.part_name,
+								size:       msg.Size,
+								message:    msg.Msg,
+								BrokerName: s.Name,
+								zkclient:   &s.zkclient,
+								file_name:  "NowBlock.txt",
+							})
+							if err != nil {
+								logger.DEBUG(logger.DError, "%v\n", err.Error())
+							}
 						}
+						index++
 					}
-					index++
 				}
 			}
 		}()

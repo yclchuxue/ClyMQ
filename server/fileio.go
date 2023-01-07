@@ -288,7 +288,8 @@ func (f *File) FindOffset(file *os.File, index int64) (int64, error) {
 		f.mu.RUnlock()
 
 		if err == io.EOF { //读到文件末尾
-			return index, errors.New("read All file, do not find this index")
+			logger.DEBUG(logger.DLog, "read All file, do not find this index\n")
+			return index, io.EOF
 		}
 		if size != NODE_SIZE {
 			logger.DEBUG(logger.DLog2, "the size is %v NODE_SIZE is %v\n", size, NODE_SIZE)

@@ -518,7 +518,7 @@ func (no *Node) ReadMSGS(in info) (MSGS, error) {
 	if no.offset == -1 || no.start_index != in.offset {
 		no.offset, err = no.file.FindOffset(&no.fd, in.offset)
 		if err != nil {
-			logger.DEBUG(logger.DError, "%v\n", err.Error())
+			logger.DEBUG(logger.DLog2, "%v\n", err.Error())
 			return MSGS{}, err
 		}
 	}
