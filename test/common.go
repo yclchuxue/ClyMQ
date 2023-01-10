@@ -50,7 +50,7 @@ func StartBrokers(t *testing.T, numbers int) (brokers []*Server.RPCServer) {
 		}, Server.Options{
 			Me:  			  index,	
 			Name:             "Broker" + strconv.Itoa(index),
-			Tag:              "broker",
+			Tag:              Server.BROKER,
 			Broker_Host_Port: server_ports[index],
 			Raft_Host_Port:   raft_ports[index],
 			Zkserver_Host_Port: ":7878",
@@ -73,7 +73,7 @@ func StartZKServer(t *testing.T) *Server.RPCServer {
 		Root:      "/ClyMQ",
 	}, Server.Options{
 		Name: "ZKServer",
-		Tag:  "zkbroker",
+		Tag:  Server.ZKBROKER,
 		Zkserver_Host_Port: ":7878",
 	})
 
