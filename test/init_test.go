@@ -37,13 +37,13 @@ func TestInit1(t *testing.T) {
 
 	//每个topic创建partition
 	fmt.Println("Producer Create a Topic/Partition")
-	err = producer.CreatePart("phone_number", "xian")
+	err = producer.CreatePart("phone_number", "shanghai")
 	if err != nil {
 		t.Fatal(err.Error())
 	}
 
 	//将partition设置状态
-	err = producer.SetPartitionState("phone_number", "xian", -1, 3)
+	err = producer.SetPartitionState("phone_number", "shanghai", -1, 3)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -54,7 +54,7 @@ func TestInit1(t *testing.T) {
 	for _, message := range messages {
 		err = producer.Push(clients.Message{
 			Topic_name: "phone_number",
-			Part_name:  "xian",
+			Part_name:  "shanghai",
 			Msg:        []byte(message),
 		}, -1)
 		if err != nil {
