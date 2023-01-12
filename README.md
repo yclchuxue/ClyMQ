@@ -51,7 +51,7 @@ kitex -module ClyMQ -service ClyMQ raftoperations.thrift
     ``` 
     go run main.go
     ```
-详细使用方法请参考[ZKServer使用文档]()和[Broker使用文档]()
+详细使用方法请参考[ZKServer使用文档](https://github.com/yclchuxue/ClyMQ/blob/master/docs/zkserver%E4%BD%BF%E7%94%A8%E6%96%87%E6%A1%A3.md)和[Broker使用文档](https://github.com/yclchuxue/ClyMQ/blob/master/docs/broker%E4%BD%BF%E7%94%A8%E6%96%87%E6%A1%A3.md)
 
 #### producer
 详细使用方法请参考[producer使用文档](https://github.com/yclchuxue/ClyMQ/blob/master/docs/producer%E4%BD%BF%E7%94%A8%E6%96%87%E6%A1%A3.md)
