@@ -59,6 +59,10 @@ kitex -module ClyMQ -service ClyMQ raftoperations.thrift
 ### consumer
 详细使用方法请参考[consumer使用文档](https://github.com/yclchuxue/ClyMQ/blob/master/docs/consumer%E4%BD%BF%E7%94%A8%E6%96%87%E6%A1%A3.md)
 
+
+### Zookeeper云数据结构图
+
+![zookeeper](/docs/ClyMQ-Zookeeper.png)
 ### 常见问题
 
 1. 若kitex生成的代码报错，则将go.mod中的github.com/apache/thrift v0.13.0，该成13版本
